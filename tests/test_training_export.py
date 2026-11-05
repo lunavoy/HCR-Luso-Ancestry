@@ -12,3 +12,9 @@ def test_crop_box_pads_and_clamps():
 def test_crop_box_rejects_degenerate():
     assert crop_box([(5, 5)], 100, 100) is None
     assert crop_box([(5, 5), (6, 5)], 100, 100, pad=0) is None
+
+
+def test_public_keys_are_rejected():
+    from src.recognition.htr.training.export_supabase import _is_public_key
+    assert _is_public_key("sb_publishable_x")
+    assert not _is_public_key("sb_secret_x")

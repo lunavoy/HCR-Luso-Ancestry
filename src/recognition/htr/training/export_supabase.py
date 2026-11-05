@@ -6,7 +6,9 @@ Depois: prepare_dataset -> train.
 from __future__ import annotations
 
 import argparse
+import base64
 import io
+import json
 import os
 from collections import defaultdict
 from datetime import datetime
@@ -18,6 +20,19 @@ from .. import config, store
 PREFIX = "sb-"
 
 
+def _is_public_key(key: str) -> bool:
+    if key.startswith("sb_publishable_"):
+        return True
+    parts = key.split(".")
+    if len(parts) != 3:
+        return False
+    try:
+        payload = json.loads(base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4)))
+    except ValueError:
+        return False
+    return payload.get("role") == "anon"
+
+
 def supabase_client():
     from dotenv import load_dotenv
     from supabase import create_client
@@ -27,6 +42,9 @@ def supabase_client():
     key = os.getenv("SUPABASE_SECRET_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
     if not url or not key:
         raise SystemExit("Configure SUPABASE_URL e SUPABASE_SECRET_KEY no .env da raiz do projeto.")
+    if _is_public_key(key):
+        raise SystemExit("SUPABASE_SECRET_KEY contém a chave pública (publishable/anon); "
+                         "com RLS a view volta vazia. Use a secret/service_role key.")
     return create_client(url, key)
 
 
@@ -63,10 +81,16 @@ def fetch_lines(client) -> list[dict]:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.parse_args()
+    ap.add_argument("--prune", action="store_true",
+                    help="permite remover todas as linhas exportadas quando a view vier vazia")
+    args = ap.parse_args()
 
     client = supabase_client()
     lines = [line for line in fetch_lines(client) if (line.get("corrected_text") or "").strip()]
+    previous = store._read_rows()
+    if not lines and any(row["id"].startswith(PREFIX) for row in previous) and not args.prune:
+        raise SystemExit("A view v_training_lines voltou vazia; nada foi alterado no dataset local. "
+                         "Se todas as linhas foram mesmo desverificadas, rode novamente com --prune.")
 
     config.CROPS_DIR.mkdir(parents=True, exist_ok=True)
     by_image: dict[tuple[str, str], list[dict]] = defaultdict(list)
@@ -93,7 +117,6 @@ def main() -> None:
                              "timestamp": now})
         image.close()
 
-    previous = store._read_rows()
     local = [row for row in previous if not row["id"].startswith(PREFIX)]
     current_ids = {row["id"] for row in exported}
     for row in previous:
