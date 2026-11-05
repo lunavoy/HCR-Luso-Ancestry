@@ -1,7 +1,7 @@
 import { ArrowLeft, BookOpen, ExternalLink, FileImage, Import, Plus, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { mockDataService } from '../services/dataService'
+import { apiDataService } from '../services/dataService'
 import { useAppStore } from '../stores/useAppStore'
 import type { CreateDocumentInput, RecordType } from '../types/domain'
 import { StatusBadge } from '../components/ui/StatusBadge'
@@ -34,7 +34,7 @@ export function CollectionDetailPage() {
 
   const createDocument = async (event: React.FormEvent) => {
     event.preventDefault()
-    const document = await mockDataService.createDocument(form)
+    const document = await apiDataService.createDocument(form)
     addDocument(document)
     setDialogOpen(false)
   }

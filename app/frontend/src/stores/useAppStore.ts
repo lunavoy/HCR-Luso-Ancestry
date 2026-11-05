@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { initialData } from '../services/dataService'
+import { apiDataService } from '../services/dataService'
 import type { Annotation, Collection, Document, Page, Point } from '../types/domain'
 
 interface AnnotationHistory {
@@ -33,12 +33,9 @@ interface AppState {
   deleteAnnotation: (pageId: string, annotationId: string) => void
   undo: (pageId: string) => void
   redo: (pageId: string) => void
+  loadWorkspace: () => Promise<void>
+  setAnnotations: (pageId: string, annotations: Annotation[]) => void
 }
-
-const annotationRecord = initialData.pages.reduce<Record<string, Annotation[]>>((record, page) => {
-  record[page.id] = initialData.annotations.filter(annotation => annotation.pageId === page.id)
-  return record
-}, {})
 
 const pushHistory = (
   state: AppState,
@@ -65,12 +62,12 @@ const initialTheme = (): 'light' | 'dark' => {
 export const useAppStore = create<AppState>((set, get) => ({
   theme: initialTheme(),
   sidebarCollapsed: false,
-  collections: initialData.collections,
-  documents: initialData.documents,
-  pages: initialData.pages,
-  annotationsByPage: annotationRecord,
+  collections: [],
+  documents: [],
+  pages: [],
+  annotationsByPage: {},
   histories: {},
-  selectedAnnotationId: 'line-002',
+  selectedAnnotationId: undefined,
   activeTool: 'select',
   annotationType: 'line',
   setTheme: theme => {
@@ -164,4 +161,25 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     }
   }),
+  setAnnotations: (pageId, annotations) => set(state => ({
+    annotationsByPage: { ...state.annotationsByPage, [pageId]: annotations },
+  })),
+  loadWorkspace: async () => {
+    const collections = await apiDataService.listCollections()
+    const documents = (await Promise.all(
+      collections.flatMap(collection => apiDataService.listDocuments(collection.id)),
+    )).flat()
+    const pages = (await Promise.all(
+      documents.flatMap(document => apiDataService.listPages(document.id)),
+    )).flat()
+    const annotationEntries = await Promise.all(
+      pages.map(async page => [page.id, await apiDataService.listAnnotations(page.id)] as const),
+    )
+    set({
+      collections,
+      documents,
+      pages,
+      annotationsByPage: Object.fromEntries(annotationEntries),
+    })
+  },
 }))

@@ -2,6 +2,30 @@
 
 Ferramenta para marcar palavras manuscritas numa imagem, reconhecê-las (HTR) e treinar o modelo com as suas confirmações.
 
+## Configuração do Supabase
+
+Crie o arquivo `.env` na raiz a partir de `.env.example` e preencha as
+credenciais do projeto. O arquivo `.env` é ignorado pelo Git e a chave secreta
+é usada somente pelo backend FastAPI; nunca a coloque no frontend.
+
+Antes de iniciar o backend, aplique as migrations em
+`supabase/migrations/001_annotations_para_treino.sql` no projeto Supabase. O bucket
+de Storage definido em `SUPABASE_IMAGE_BUCKET` também precisa existir e ser
+acessível pela chave secreta.
+
+No Windows, use o CLI via `npx` na raiz do projeto. A chave `SUPABASE_SECRET_KEY`
+do `.env` não substitui o login do CLI nem a senha do banco:
+
+```powershell
+Set-Location F:\teste
+npx supabase login
+npx supabase link --project-ref pugsqccwbphancdwwdox
+npx supabase db push
+```
+
+O `login` pede um access token do Supabase. O `link`/`db push` pode pedir a
+senha do banco; ela não é a mesma coisa que a secret key da API.
+
 ## Estrutura
 
 ```
@@ -61,6 +85,35 @@ O resultado será salvo em
 `data\pagexml\tinhela\pagina.xml`, contendo regiões, polígonos e baselines.
 As imagens e os XML gerados permanecem fora do Git para que páginas reais e
 artefatos de processamento não sejam versionados acidentalmente.
+
+Para validar as coordenadas independentemente do frontend:
+
+```powershell
+& .\.venv\Scripts\python.exe scripts\check_pagexml.py `
+  data\originals\tinhela\pagina.jpg `
+  data\pagexml\tinhela\pagina.xml `
+  --out data\processed\tinhela\pagina-overlay.png `
+  --json data\processed\tinhela\pagina-check.json
+```
+
+O overlay verifica dimensões, orientação EXIF, limites dos polígonos,
+baselines ausentes/fora da região e linhas suspeitas. Isso valida a entrada
+visual, mas não testa a comunicação com a API ou o Supabase.
+
+### Estado da integração
+
+O frontend atual ainda usa `mockDataService`; a API FastAPI disponível expõe
+apenas `/health`. Portanto, o fluxo real frontend → backend → Supabase ainda
+não está conectado e a proposta SQL deve ser aplicada somente depois de
+confirmar as migrations existentes no projeto Supabase. O verificador acima
+é seguro para usar antes dessa integração.
+
+Para iniciar a aplicação frontend em desenvolvimento:
+
+```powershell
+Set-Location F:\teste\app\frontend
+npm run dev
+```
 
 ## Instalação (VS Code)
 
@@ -180,7 +233,13 @@ Terminal 1 — serviço Python de IA:
 & ".\.venv\Scripts\python.exe" -m recognition.htr.server --no-model
 ```
 
-Terminal 2 — API Node pública:
+Terminal 2 — API FastAPI com Supabase:
+
+```powershell
+& ".\.venv\Scripts\python.exe" -m uvicorn app.backend.app.main:app --reload --port 8000
+```
+
+Terminal 3 — API Node pública:
 
 ```powershell
 cd app/frontend
@@ -188,7 +247,7 @@ npm install
 npm run server
 ```
 
-Terminal 3 — front-end Vite:
+Terminal 4 — front-end Vite:
 
 ```powershell
 cd app/frontend
@@ -196,7 +255,8 @@ npm run dev
 ```
 
 Abra `http://127.0.0.1:5173`. O Vite encaminha `/api`, `/recognize` e
-`/detect-layout` para o Node em `http://127.0.0.1:5100`.
+`/detect-layout` para o Node em `http://127.0.0.1:5100`; a API Node encaminha
+`/api` para o FastAPI em `http://127.0.0.1:8000`.
 
 #### Migração Flask → Node
 
@@ -220,7 +280,7 @@ npm run build
 
 O proxy do Vite encaminha `/api`, `/recognize` e `/detect-layout` para a API
 Node em `http://127.0.0.1:5100`; a API Node encaminha as operações ao serviço
-Python em `http://127.0.0.1:5000`.
+FastAPI em `http://127.0.0.1:8000`.
 Os padrões visuais estão documentados em `docs/layout-mapping.md`.
 
 ### Reconhecimento em português

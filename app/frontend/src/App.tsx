@@ -1,6 +1,8 @@
 import { lazy, Suspense } from 'react'
+import { useEffect } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { WorkspaceLayout } from './components/layout/WorkspaceLayout'
+import { useAppStore } from './stores/useAppStore'
 
 const OverviewPage = lazy(() => import('./pages/OverviewPage').then(module => ({ default: module.OverviewPage })))
 const CollectionsPage = lazy(() => import('./pages/CollectionsPage').then(module => ({ default: module.CollectionsPage })))
@@ -12,6 +14,14 @@ const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage').then(module
 const ViewerPage = lazy(() => import('./pages/ViewerPage').then(module => ({ default: module.ViewerPage })))
 
 export default function App() {
+  const loadWorkspace = useAppStore(state => state.loadWorkspace)
+
+  useEffect(() => {
+    void loadWorkspace().catch(error => {
+      console.error('Não foi possível carregar o workspace:', error)
+    })
+  }, [loadWorkspace])
+
   return (
     <Suspense fallback={<div className="route-loading">A preparar o espaço de trabalho…</div>}>
       <Routes>

@@ -1,7 +1,7 @@
 import { AlertTriangle, ArrowLeft, Check, FileImage, Trash2, UploadCloud, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { mockDataService } from '../services/dataService'
+import { apiDataService } from '../services/dataService'
 import { useAppStore } from '../stores/useAppStore'
 import type { ImportCandidate } from '../types/domain'
 import { formatBytes } from '../utils/format'
@@ -59,7 +59,7 @@ export function ImportPage() {
       candidate.state === 'uploading' ? { ...candidate, progress: Math.min(92, candidate.progress + 12) } : candidate,
     )), 180)
     const valid = candidates.filter(candidate => !candidate.error)
-    const pages = await mockDataService.importImages(documentId, valid.map(candidate => candidate.file))
+    const pages = await apiDataService.importImages(documentId, valid.map(candidate => candidate.file))
     if (intervalRef.current) window.clearInterval(intervalRef.current)
     setCandidates(current => current.map(candidate => candidate.error ? candidate : { ...candidate, state: 'complete', progress: 100 }))
     addPages(pages.map((page, index) => ({

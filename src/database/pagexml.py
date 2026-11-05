@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import xml.etree.ElementTree as ET
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Iterable
 
 Point = list[int]
@@ -32,9 +32,53 @@ def _children(element: ET.Element, name: str) -> Iterable[ET.Element]:
 
 
 def _text(element: ET.Element) -> str:
-    for child in _children(element, "Unicode"):
-        return child.text or ""
+    for child in element:
+        if _local_name(child.tag) == "TextEquiv":
+            for unicode_ in child:
+                if _local_name(unicode_.tag) == "Unicode":
+                    return unicode_.text or ""
     return ""
+
+
+def _page_image_name(root: ET.Element) -> str | None:
+    for page in _children(root, "Page"):
+        filename = page.get("imageFilename")
+        return PureWindowsPath(filename).name if filename else None
+    return None
+
+
+def _page_size(root: ET.Element) -> dict[str, int] | None:
+    for page in _children(root, "Page"):
+        try:
+            return {"width": int(page.get("imageWidth")),
+                    "height": int(page.get("imageHeight"))}
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _orphan_line_regions(root: ET.Element) -> list[ET.Element]:
+    parents = {child: parent for parent in root.iter() for child in parent}
+    orphans = [element for element in root.iter()
+               if _local_name(element.tag) == "TextLine"
+               and _local_name(parents[element].tag) != "TextRegion"]
+    points = [
+        point
+        for line in orphans
+        for coords in _children(line, "Coords")
+        for point in _points(coords.get("points"))
+    ]
+    if not points:
+        return []
+    namespace = root.tag.partition("}")[0] + "}" if root.tag.startswith("{") else ""
+    region = ET.Element(f"{namespace}TextRegion", {"id": "orphan-lines"})
+    xs, ys = zip(*points)
+    ET.SubElement(region, f"{namespace}Coords", {
+        "points": f"{min(xs)},{min(ys)} {max(xs)},{min(ys)} "
+                  f"{max(xs)},{max(ys)} {min(xs)},{max(ys)}",
+    })
+    region.extend(orphans)
+    return [region]
 
 
 def _polygon_box(points: list[Point]) -> dict[str, int]:
@@ -117,9 +161,14 @@ def load_pagexml(path: Path, image_name: str | None = None) -> list[dict]:
     except ET.ParseError as exc:
         raise ValueError(f"PageXML inválido: {path}") from exc
     name = image_name or path.stem
-    regions = list(_children(root, "TextRegion"))
-    return [_region_record(region, name, index)
-            for index, region in enumerate(regions, 1)]
+    name = image_name or _page_image_name(root) or path.stem
+    size = _page_size(root)
+    regions = list(_children(root, "TextRegion")) + _orphan_line_regions(root)
+    records = [_region_record(region, name, index)
+               for index, region in enumerate(regions, 1)]
+    for record in records:
+        record["image_size"] = size
+    return records
 
 
 def write_json(pathxml: Path, output: Path, image_name: str | None = None) -> None:

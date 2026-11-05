@@ -1,7 +1,7 @@
 import { Archive, ChevronDown, Filter, Plus, Search, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { mockDataService } from '../services/dataService'
+import { apiDataService } from '../services/dataService'
 import { useAppStore } from '../stores/useAppStore'
 import type { CreateCollectionInput, RecordType } from '../types/domain'
 import { formatDate, recordTypeLabels } from '../utils/format'
@@ -29,6 +29,7 @@ export function CollectionsPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [form, setForm] = useState(emptyForm)
   const [manualTitle, setManualTitle] = useState(false)
+  const [error, setError] = useState('')
 
   const generatedTitle = `Livro de ${recordTypeLabels[form.recordType]} (${form.startYear}–${form.endYear}) - ${form.parish || 'Freguesia'}, ${form.municipality || 'Concelho'}, ${form.district || 'Distrito'}`
   const visibleCollections = useMemo(() => collections.filter(collection => {
@@ -47,11 +48,18 @@ export function CollectionsPage() {
 
   const createCollection = async (event: React.FormEvent) => {
     event.preventDefault()
-    const collection = await mockDataService.createCollection({ ...form, title: manualTitle ? form.title : generatedTitle })
-    addCollection(collection)
-    setDialogOpen(false)
-    setForm(emptyForm)
-    setManualTitle(false)
+    setError('')
+    try {
+      const collection = await apiDataService.createCollection({
+        ...form, title: manualTitle ? form.title : generatedTitle,
+      })
+      addCollection(collection)
+      setDialogOpen(false)
+      setForm(emptyForm)
+      setManualTitle(false)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível criar a coleção.')
+    }
   }
 
   return (
@@ -96,6 +104,7 @@ export function CollectionsPage() {
               <label className="full-field"><span>Título da coleção</span><input value={manualTitle ? form.title : generatedTitle} onFocus={() => { setManualTitle(true); setForm(current => ({ ...current, title: generatedTitle })) }} onChange={event => updateForm('title', event.target.value)} /><small>Gerado automaticamente. Pode ser editado.</small></label>
               <label className="full-field"><span>Observações</span><textarea value={form.notes} onChange={event => updateForm('notes', event.target.value)} rows={3} /></label>
             </div>
+            {error && <p className="error-text">{error}</p>}
             <div className="dialog-footer"><button className="secondary-button" onClick={() => setDialogOpen(false)} type="button">Cancelar</button><button className="primary-button" type="submit">Criar coleção</button></div>
           </form>
         </div>

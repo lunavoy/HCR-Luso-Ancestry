@@ -63,6 +63,8 @@ export interface Annotation {
   correctedText?: string
   confidence?: number
   status: VerificationStatus
+  originalPolygon?: Point[]
+  originalBaseline?: Point[]
 }
 
 export interface ImportCandidate {
