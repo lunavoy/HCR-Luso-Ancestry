@@ -1,0 +1,9 @@
+{
+  "installOn": [
+    "app/frontend/package.json",
+    "app/frontend/package-lock.json"
+  ],
+  "restartOn": [
+    "app/frontend/vite.config.ts"
+  ]
+}

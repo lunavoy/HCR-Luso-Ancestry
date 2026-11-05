@@ -1,0 +1,11 @@
+{
+  "description": "A setup and verification tool for teams preparing newly imported projects for deployment and preview, helping ensure both workflows are configured and ready.",
+  "language": "pt",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1600" viewBox="0 0 1200 1600">
+  <defs>
+    <filter id="paper"><feTurbulence baseFrequency=".7" numOctaves="3" seed="8" type="fractalNoise" result="n"/><feBlend in="SourceGraphic" in2="n" mode="multiply"/></filter>
+  </defs>
+  <rect width="1200" height="1600" fill="#e6dcc3"/>
+  <rect x="45" y="42" width="1110" height="1516" rx="3" fill="#f1e8d3" stroke="#b9a98a" stroke-width="3"/>
+  <g opacity=".13" filter="url(#paper)"><rect x="45" y="42" width="1110" height="1516" fill="#917c58"/></g>
+  <g fill="none" stroke="#4f4030" stroke-linecap="round" opacity=".72">
+    <path d="M150 356 C280 326 405 372 526 342 S790 365 1032 332" stroke-width="13"/>
+    <path d="M154 458 C310 423 424 474 604 441 S824 468 1020 438" stroke-width="11"/>
+    <path d="M164 561 C296 532 437 570 572 548 S835 577 1016 540" stroke-width="14"/>
+    <path d="M158 670 C342 633 470 685 647 650 S873 681 1010 647" stroke-width="12"/>
+    <path d="M164 772 C306 741 424 785 582 750 S852 778 1005 746" stroke-width="13"/>
+    <path d="M160 894 C311 854 461 906 630 870 S862 896 1017 861" stroke-width="12"/>
+    <path d="M164 1002 C330 968 466 1016 604 986 S850 1006 1004 978" stroke-width="13"/>
+    <path d="M158 1110 C306 1078 438 1123 590 1090 S851 1114 1018 1082" stroke-width="11"/>
+    <path d="M168 1214 C318 1186 450 1228 628 1197 S852 1220 1008 1192" stroke-width="13"/>
+  </g>
+  <g fill="#705f46" font-family="Georgia, serif" text-anchor="middle">
+    <text x="600" y="156" font-size="30" letter-spacing="4">DOCUMENTO DE DEMONSTRAÇÃO</text>
+    <text x="600" y="206" font-size="21">A imagem original ainda não foi importada</text>
+  </g>
+  <g fill="#8e7b5e" font-family="system-ui, sans-serif" text-anchor="middle">
+    <text x="600" y="1460" font-size="19">Placeholder local • coordenadas 1200 × 1600 px</text>
+    <text x="600" y="1494" font-size="16">Não representa um documento histórico real</text>
+  </g>
+</svg>

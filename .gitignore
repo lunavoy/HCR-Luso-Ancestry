@@ -1,0 +1,18 @@
+.venv/
+node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+.cache/
+.env
+.env.*
+!.env.example
+variables.env
+# dados pessoais e modelos pesados ficam fora do git
+dataset/originals/*
+dataset/processed/*
+dataset/annotations/*
+dataset/splits/*
+models/recognition/*
+!**/.gitkeep
