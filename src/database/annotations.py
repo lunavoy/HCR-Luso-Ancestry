@@ -118,8 +118,9 @@ def _rect(x0: int, y0: int, x1: int, y1: int, pad: int) -> list[list[int]]:
 
 def _auto_row(page_uuid: uuid.UUID, source_id: str, kind: str, polygon: list[list[int]],
               order: int, parent_id: str | None) -> dict[str, Any]:
+    # id aleatório: nunca colide com registros/regiões mantidos de segmentações anteriores.
     return {
-        "id": str(uuid.uuid5(page_uuid, source_id)), "page_id": str(page_uuid),
+        "id": str(uuid.uuid4()), "page_id": str(page_uuid),
         "parent_id": parent_id, "element_type": kind, "polygon": polygon,
         "baseline": None, "reading_order": order, "predicted_text": None,
         "corrected_text": None, "confidence": None, "is_verified": False,
@@ -242,8 +243,9 @@ def rows_to_pagexml(rows: list[dict[str, Any]], *, image_filename: str,
         for line in lines:
             if line.get("parent_id") == region["id"]:
                 put_line(element, line)
+    region_ids = {region["id"] for region in regions}
     for line in lines:
-        if not line.get("parent_id"):
+        if line.get("parent_id") not in region_ids:
             put_line(page, line)
     ET.indent(root)
     return '<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(

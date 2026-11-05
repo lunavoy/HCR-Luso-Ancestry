@@ -156,6 +156,7 @@ def segment_page(page_id: str) -> dict:
             raise HTTPException(status_code=502, detail=completed.stderr or completed.stdout)
         parsed = pagexml_to_rows(xml_path, page_id)
         rows: list[dict] = parsed["rows"]
+        kept_record_ids: set[str] = set()
         if rows:
             existing = client.table("annotations").select(
                 "id,parent_id,element_type,polygon,origin,is_verified"
@@ -178,6 +179,7 @@ def segment_page(page_id: str) -> dict:
                 client.table("annotations").delete().in_("id", stale).execute()
             kept_records = [row for row in existing
                             if row["id"] in keep and row["element_type"] == "record"]
+            kept_record_ids = {row["id"] for row in kept_records}
             rows = group_records(rows, page_id, existing_records=kept_records)
             candidates = [row for row in rows if row["id"] not in protected]
             if candidates:
@@ -193,8 +195,11 @@ def segment_page(page_id: str) -> dict:
             "pagexml_storage_path": xml_storage_path,
         }).eq("id", page_id).execute()
         kinds = [row["element_type"] for row in rows]
+        record_ids = {row["id"] for row in rows if row["element_type"] == "record"} | {
+            row["parent_id"] for row in rows
+            if row["element_type"] != "record" and row.get("parent_id") in kept_record_ids}
         return {"page_id": page_id, "lines": kinds.count("line"),
-                "regions": kinds.count("region"), "records": kinds.count("record"),
+                "regions": kinds.count("region"), "records": len(record_ids),
                 "skipped": parsed["skipped"]}
 
 

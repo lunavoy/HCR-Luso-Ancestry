@@ -52,3 +52,14 @@ def test_group_records_reuses_reviewed_record():
     records = [r for r in rows if r["element_type"] == "record"]
     assert len(records) == 1
     assert next(r for r in rows if r["id"] == "l0")["parent_id"] == "kept"
+
+
+def test_pagexml_keeps_lines_owned_by_records():
+    from src.database.annotations import rows_to_pagexml
+
+    rows = [
+        {"id": "rec", "element_type": "record", "parent_id": None, "polygon": [[0, 0], [9, 0], [9, 9]]},
+        {"id": "l1", "element_type": "line", "parent_id": "rec", "reading_order": 0,
+         "polygon": [[0, 0], [9, 0], [9, 5]], "baseline": [[0, 5], [9, 5]]},
+    ]
+    assert 'id="l1"' in rows_to_pagexml(rows, image_filename="a.png", width=10, height=10)
