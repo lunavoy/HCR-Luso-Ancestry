@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import io
 import os
+from collections import defaultdict
 from datetime import datetime
 
 from PIL import Image, ImageOps
@@ -66,36 +67,44 @@ def main() -> None:
 
     client = supabase_client()
     lines = [line for line in fetch_lines(client) if (line.get("corrected_text") or "").strip()]
-    if not lines:
-        raise SystemExit("Nenhuma linha verificada com transcrição no Supabase. "
-                         "Marque linhas como verificadas no editor e guarde a página.")
 
     config.CROPS_DIR.mkdir(parents=True, exist_ok=True)
-    images: dict[str, Image.Image] = {}
+    by_image: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for line in lines:
+        by_image[(line["storage_bucket"], line["storage_path"])].append(line)
+
     exported, skipped = [], 0
     now = datetime.now().isoformat(timespec="seconds")
-    for line in lines:
-        key = f"{line['storage_bucket']}/{line['storage_path']}"
-        if key not in images:
-            data = client.storage.from_(line["storage_bucket"]).download(line["storage_path"])
-            images[key] = ImageOps.exif_transpose(Image.open(io.BytesIO(data))).convert("RGB")
-        image = images[key]
-        box = crop_box(_points(line.get("polygon")), image.width, image.height)
-        if not box:
-            skipped += 1
-            continue
-        x, y, w, h = box
-        uid = f"{PREFIX}{line['id']}"
-        image.crop((x, y, x + w, y + h)).save(config.CROPS_DIR / f"{uid}.png")
-        exported.append({"id": uid, "crop_file": f"{uid}.png", "text": line["corrected_text"].strip(),
-                         "predicted": "", "confidence": "", "was_correct": "",
-                         "source_image": str(line["page_id"]), "x": x, "y": y, "w": w, "h": h,
-                         "timestamp": now})
+    for (bucket, path), page_lines in by_image.items():
+        data = client.storage.from_(bucket).download(path)
+        with Image.open(io.BytesIO(data)) as raw:
+            image = ImageOps.exif_transpose(raw).convert("RGB")
+        for line in page_lines:
+            box = crop_box(_points(line.get("polygon")), image.width, image.height)
+            if not box:
+                skipped += 1
+                continue
+            x, y, w, h = box
+            uid = f"{PREFIX}{line['id']}"
+            image.crop((x, y, x + w, y + h)).save(config.CROPS_DIR / f"{uid}.png")
+            exported.append({"id": uid, "crop_file": f"{uid}.png", "text": line["corrected_text"].strip(),
+                             "predicted": "", "confidence": "", "was_correct": "",
+                             "source_image": str(line["page_id"]), "x": x, "y": y, "w": w, "h": h,
+                             "timestamp": now})
+        image.close()
 
-    local = [row for row in store._read_rows() if not row["id"].startswith(PREFIX)]
+    previous = store._read_rows()
+    local = [row for row in previous if not row["id"].startswith(PREFIX)]
+    current_ids = {row["id"] for row in exported}
+    for row in previous:
+        if row["id"].startswith(PREFIX) and row["id"] not in current_ids:
+            (config.CROPS_DIR / row["crop_file"]).unlink(missing_ok=True)
     rows = local + exported
     store._write_rows(rows)
     store._write_lexicon(rows)
+    if not exported:
+        print("Nenhuma linha verificada com transcrição no Supabase. "
+              "Marque linhas como verificadas no editor e guarde a página.")
     print(f"Exportadas {len(exported)} linhas do Supabase ({skipped} ignoradas por polígono inválido); "
           f"{len(local)} confirmações locais mantidas. Total: {len(rows)} em {config.LABELS_CSV}")
 

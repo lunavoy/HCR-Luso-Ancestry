@@ -187,7 +187,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (get().loadedAnnotationPages[pageId]) return
     const annotations = await apiDataService.listAnnotations(pageId)
     set(state => ({
-      annotationsByPage: { ...state.annotationsByPage, [pageId]: state.annotationsByPage[pageId]?.length ? state.annotationsByPage[pageId] : annotations },
+      annotationsByPage: { ...state.annotationsByPage, [pageId]: annotations },
       loadedAnnotationPages: { ...state.loadedAnnotationPages, [pageId]: true },
     }))
   },

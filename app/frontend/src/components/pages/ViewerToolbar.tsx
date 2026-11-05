@@ -38,6 +38,7 @@ export function ViewerToolbar({
   onRedo,
   onRotate,
   onSave,
+  saveDisabled,
 }: {
   canvas: React.RefObject<PageCanvasHandle | null>
   tool: Tool
@@ -54,6 +55,7 @@ export function ViewerToolbar({
   onRedo: () => void
   onRotate: () => void
   onSave: () => void
+  saveDisabled?: boolean
 }) {
   return (
     <div className="viewer-toolbar">
@@ -88,7 +90,7 @@ export function ViewerToolbar({
         <IconButton label="Centralizar" onClick={() => canvas.current?.center()}><Focus size={17} /></IconButton>
         <IconButton label="Rodar 90°" onClick={onRotate}><RotateCw size={17} /></IconButton>
       </div>
-      <button className="save-button" onClick={onSave} type="button"><Check size={16} /> Guardar</button>
+      <button className="save-button" disabled={saveDisabled} onClick={onSave} type="button"><Check size={16} /> Guardar</button>
     </div>
   )
 }

@@ -24,7 +24,10 @@ logger = logging.getLogger(__name__)
 @app.exception_handler(Exception)
 async def unexpected_error(_request: Request, exc: Exception) -> JSONResponse:
     logger.exception("Erro não tratado na API")
-    return JSONResponse(status_code=500, content={"detail": f"{type(exc).__name__}: {exc}"})
+    # RuntimeError: erros de configuração com mensagens próprias (ex.: chave Supabase).
+    detail = str(exc) if isinstance(exc, RuntimeError) else (
+        "Erro interno na API. Consulte o terminal do uvicorn para detalhes.")
+    return JSONResponse(status_code=500, content={"detail": detail})
 
 
 app.include_router(pages_router)

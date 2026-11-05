@@ -19,6 +19,20 @@ def _sort_pages(rows: list[dict]) -> list[dict]:
     return sorted(rows, key=lambda row: (str(row.get("document_id")), row.get("page_number") or 0))
 
 
+PAGE_SIZE = 1000
+
+
+def _select_all(table: str, order: str) -> list[dict]:
+    """Percorre todas as linhas; o PostgREST devolve no máximo 1000 por pedido."""
+    query = get_supabase_client().table(table).select("*").order(order).order("id")
+    rows: list[dict] = []
+    while True:
+        batch = query.range(len(rows), len(rows) + PAGE_SIZE - 1).execute().data or []
+        rows += batch
+        if len(batch) < PAGE_SIZE:
+            return rows
+
+
 def _insert(table: str, payload: dict[str, Any], label: str) -> dict:
     try:
         result = get_supabase_client().table(table).insert(payload).execute()
@@ -34,10 +48,9 @@ def _insert(table: str, payload: dict[str, Any], label: str) -> dict:
 @router.get("/workspace")
 def workspace() -> dict[str, list[dict]]:
     """Carrega coleções, livros e páginas em três consultas (sem N+1)."""
-    client = get_supabase_client()
-    collections = client.table("collections").select("*").order("title").execute().data or []
-    documents = client.table("documents").select("*").execute().data or []
-    pages = client.table("pages").select("*").execute().data or []
+    collections = _select_all("collections", "title")
+    documents = _select_all("documents", "id")
+    pages = _select_all("pages", "id")
     return {
         "collections": collections,
         "documents": _sort_documents(documents),
