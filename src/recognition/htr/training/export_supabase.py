@@ -117,6 +117,7 @@ def main() -> None:
                              "timestamp": now})
         image.close()
 
+    previous = store._read_rows()  # relê: o servidor Flask pode ter gravado durante os downloads
     local = [row for row in previous if not row["id"].startswith(PREFIX)]
     current_ids = {row["id"] for row in exported}
     for row in previous:
