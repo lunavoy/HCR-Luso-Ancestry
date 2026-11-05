@@ -4,6 +4,7 @@ from __future__ import annotations
 import math
 
 from . import config
+from .torch_config import configure_torch
 
 
 class Recognizer:
@@ -16,6 +17,7 @@ class Recognizer:
         import torch
         from transformers import TrOCRProcessor, VisionEncoderDecoderModel
 
+        configure_torch()
         if (config.CURRENT_MODEL / "config.json").exists():
             path, kw = str(config.CURRENT_MODEL), {}
         else:

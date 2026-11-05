@@ -8,10 +8,12 @@ from transformers import (Seq2SeqTrainer, Seq2SeqTrainingArguments, TrOCRProcess
                           VisionEncoderDecoderModel, default_data_collator)
 
 from .. import config
+from ..torch_config import configure_torch
 from .dataset import WordDataset
 
 
 def main():
+    configure_torch()
     ap = argparse.ArgumentParser()
     ap.add_argument("--epochs", type=int, default=20)
     ap.add_argument("--batch-size", type=int, default=8)

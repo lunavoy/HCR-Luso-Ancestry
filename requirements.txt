@@ -13,5 +13,7 @@ jiwer>=3.0
 # --- layout analysis and historical handwriting recognition ---
 kraken>=7.0
 shapely>=2.0
+supabase>=2.0
+python-dotenv>=1.0
 # --- dev ---
 pytest>=8.0

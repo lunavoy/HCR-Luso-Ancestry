@@ -30,6 +30,38 @@ meu-htr/
 └── README.md
 ```
 
+## Sprint 004 — segmentação assistida
+
+O fluxo inicial usa imagens originais, segmentação neural por baselines do
+Kraken e PAGE XML como formato de intercâmbio. As pastas de trabalho são:
+
+```text
+data/
+├── originals/tinhela/  # imagens das páginas, não versionadas
+├── processed/tinhela/  # derivados locais, não versionados
+└── pagexml/tinhela/    # resultados PAGE XML, não versionados
+```
+
+Coloque uma imagem em `data\originals\tinhela` e confirme primeiro as opções
+disponíveis:
+
+```powershell
+& .\.venv\Scripts\kraken.exe segment --help
+```
+
+Execute a segmentação neural (CPU por padrão; use `--device cuda:0` para a
+GPU) com:
+
+```powershell
+& .\.venv\Scripts\python.exe scripts\segment_kraken.py `
+  data\originals\tinhela\pagina.jpg --device cuda:0
+```
+
+O resultado será salvo em
+`data\pagexml\tinhela\pagina.xml`, contendo regiões, polígonos e baselines.
+As imagens e os XML gerados permanecem fora do Git para que páginas reais e
+artefatos de processamento não sejam versionados acidentalmente.
+
 ## Instalação (VS Code)
 
 No Windows, o instalador abaixo prepara todos os componentes locais: ambiente

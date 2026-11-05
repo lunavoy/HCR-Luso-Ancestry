@@ -35,6 +35,14 @@ dataset/processed/*
 dataset/annotations/*
 dataset/splits/*
 
+# Sprint 004: imagens e artefatos de segmentação locais
+data/originals/*/*
+data/processed/*/*
+data/pagexml/*/*
+!data/originals/**/.gitkeep
+!data/processed/**/.gitkeep
+!data/pagexml/**/.gitkeep
+
 # Frontend
 dist/
 
