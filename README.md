@@ -102,11 +102,29 @@ visual, mas não testa a comunicação com a API ou o Supabase.
 
 ### Estado da integração
 
-O frontend atual ainda usa `mockDataService`; a API FastAPI disponível expõe
-apenas `/health`. Portanto, o fluxo real frontend → backend → Supabase ainda
-não está conectado e a proposta SQL deve ser aplicada somente depois de
-confirmar as migrations existentes no projeto Supabase. O verificador acima
-é seguro para usar antes dessa integração.
+O frontend usa `apiDataService`: coleções, livros, páginas e anotações são
+guardados no Supabase através da API FastAPI (porta 8000), exposta pelo
+gateway Node (porta 5100) e pelo Vite (porta 5173). Não há login: o app é de
+uso pessoal e a API usa a `SUPABASE_SECRET_KEY` (nunca a chave
+publishable/anon, que com RLS devolve listas vazias). Se o acervo não
+carregar, a página mostra o erro devolvido pela API com um botão para tentar
+novamente.
+
+Coleções criadas quando o frontend ainda usava dados mock não foram gravadas
+e precisam ser recriadas.
+
+Para treinar com as anotações feitas no app, marque as linhas como
+verificadas, guarde a página e exporte-as para o dataset local:
+
+```powershell
+python -m recognition.htr.training.export_supabase
+python -m recognition.htr.training.prepare_dataset
+python -m recognition.htr.training.train
+```
+
+A exportação lê a view `v_training_lines` (migration `001`), recorta cada
+linha verificada para `dataset/processed/` e junta-as ao `labels.csv`, mantendo
+as confirmações feitas no servidor Flask.
 
 Para iniciar a aplicação frontend em desenvolvimento:
 

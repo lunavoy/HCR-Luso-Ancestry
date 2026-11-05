@@ -6,6 +6,12 @@ import type { Point } from '../types/domain'
 
 const wait = (duration = 120) => new Promise(resolve => window.setTimeout(resolve, duration))
 
+export interface Workspace {
+  collections: Collection[]
+  documents: Document[]
+  pages: Page[]
+}
+
 export interface DataService {
   listCollections(): Promise<Collection[]>
   createCollection(input: CreateCollectionInput): Promise<Collection>
@@ -60,9 +66,27 @@ export const mockDataService: DataService = {
   },
 }
 
+const errorMessage = async (response: Response) => {
+  const raw = await response.text()
+  try {
+    const parsed = JSON.parse(raw) as { detail?: unknown; error?: unknown }
+    const detail = parsed.detail ?? parsed.error
+    if (typeof detail === 'string') return detail
+    if (detail) return JSON.stringify(detail)
+  } catch {
+    // resposta não JSON
+  }
+  return raw || `Erro ${response.status} na API`
+}
+
 const api = async (path: string, init?: RequestInit): Promise<any> => {
-  const response = await fetch(`/api${path}`, init)
-  if (!response.ok) throw new Error((await response.text()) || `API ${response.status}`)
+  let response: Response
+  try {
+    response = await fetch(`/api${path}`, init)
+  } catch {
+    throw new Error('Não foi possível contactar a API. Verifique se os servidores estão em execução.')
+  }
+  if (!response.ok) throw new Error(await errorMessage(response))
   return response.status === 204 ? undefined : response.json()
 }
 
@@ -75,13 +99,17 @@ const toPage = (row: Record<string, unknown>): Page => ({
   importedAt: String(row.created_at ?? row.imported_at ?? new Date().toISOString()),
 })
 
-const toDocument = (row: Record<string, unknown>): Document => ({
+const toDocument = (row: Record<string, unknown>): Document => {
+  const meta = (row.metadata ?? {}) as Record<string, unknown>
+  return {
   id: String(row.id), collectionId: String(row.collection_id), title: String(row.title),
-  recordType: row.record_type as Document['recordType'], startYear: Number(row.start_year),
-  endYear: Number(row.end_year), archivalReference: String(row.archival_reference ?? ''),
+  recordType: (row.record_type ?? meta.record_type) as Document['recordType'],
+  startYear: Number(row.start_year ?? meta.start_year), endYear: Number(row.end_year ?? meta.end_year),
+  archivalReference: String(row.archival_reference ?? row.source_reference ?? ''),
   sourceUrl: String(row.source_url ?? ''), pageIds: (row.page_ids ?? []) as string[],
   status: (row.status ?? 'imported') as Document['status'],
-})
+  }
+}
 
 const toCollection = (row: Record<string, unknown>): Collection => ({
   id: String(row.id), title: String(row.title),
@@ -119,7 +147,23 @@ const toAnnotation = (row: Record<string, unknown>): Annotation => ({
   originalBaseline: toPoints(row.original_baseline),
 })
 
-export const apiDataService: DataService = {
+export interface SegmentResult { lines: number, regions: number, records: number }
+
+export const apiDataService: DataService & {
+  getWorkspace(): Promise<Workspace>
+  segmentPage(pageId: string): Promise<SegmentResult>
+} = {
+  async segmentPage(pageId) {
+    return api(`/pages/${pageId}/segment`, { method: 'POST' })
+  },
+  async getWorkspace() {
+    const data = await api('/workspace')
+    return {
+      collections: data.collections.map(toCollection),
+      documents: data.documents.map(toDocument),
+      pages: data.pages.map(toPage),
+    }
+  },
   async listCollections() { return (await api('/collections')).map(toCollection) },
   async createCollection(input) {
     return toCollection(await api('/collections', { method: 'POST',
@@ -143,18 +187,19 @@ export const apiDataService: DataService = {
   async createDocument(input) {
     return toDocument(await api('/documents', { method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ...input, collection_id: input.collectionId, record_type: input.recordType,
-        start_year: input.startYear, end_year: input.endYear,
-        archival_reference: input.archivalReference, source_url: input.sourceUrl }) }))
+      body: JSON.stringify({ collection_id: input.collectionId, title: input.title,
+        record_type: input.recordType, start_year: input.startYear, end_year: input.endYear,
+        archival_reference: input.archivalReference || null, source_url: input.sourceUrl || null }) }))
   },
   async listPages(documentId) { return (await api(`/documents/${documentId}/pages`)).map(toPage) },
   async importImages(documentId, files) {
     const pages: Page[] = []
     const existing = await this.listPages(documentId)
+    const nextNumber = existing.reduce((max, page) => Math.max(max, page.pageNumber), 0) + 1
     for (const [index, file] of files.entries()) {
       const form = new FormData()
       form.append('document_id', documentId)
-      form.append('page_number', String(existing.length + index + 1))
+      form.append('page_number', String(nextNumber + index))
       form.append('file', file)
       pages.push(toPage(await api('/pages/import', { method: 'POST', body: form })))
     }

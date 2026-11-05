@@ -35,8 +35,11 @@ def main():
     else:
         is_val = lambda r: rng.random() < a.val_ratio
 
-    train = [r for r in rows if not is_val(r)]
-    val = [r for r in rows if is_val(r)]
+    flags = [is_val(r) for r in rows]
+    train = [r for r, v in zip(rows, flags) if not v]
+    val = [r for r, v in zip(rows, flags) if v]
+    if not val and len(train) > 1:
+        val.append(train.pop())
     config.DATASETS_DIR.mkdir(parents=True, exist_ok=True)
     for name, part in (("train", train), ("val", val)):
         with open(config.DATASETS_DIR / f"{name}.csv", "w", newline="", encoding="utf-8") as f:

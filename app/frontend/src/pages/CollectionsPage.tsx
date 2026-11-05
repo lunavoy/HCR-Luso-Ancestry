@@ -1,4 +1,5 @@
 import { Archive, ChevronDown, Filter, Plus, Search, X } from 'lucide-react'
+import { EmptyState } from '../components/ui/EmptyState'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiDataService } from '../services/dataService'
@@ -21,6 +22,8 @@ const emptyForm: CreateCollectionInput = {
 export function CollectionsPage() {
   const collections = useAppStore(state => state.collections)
   const addCollection = useAppStore(state => state.addCollection)
+  const workspaceStatus = useAppStore(state => state.workspaceStatus)
+  const [saving, setSaving] = useState(false)
   const [query, setQuery] = useState('')
   const [recordType, setRecordType] = useState<'all' | RecordType>('all')
   const [parish, setParish] = useState('all')
@@ -49,6 +52,7 @@ export function CollectionsPage() {
   const createCollection = async (event: React.FormEvent) => {
     event.preventDefault()
     setError('')
+    setSaving(true)
     try {
       const collection = await apiDataService.createCollection({
         ...form, title: manualTitle ? form.title : generatedTitle,
@@ -59,6 +63,8 @@ export function CollectionsPage() {
       setManualTitle(false)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível criar a coleção.')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -74,7 +80,7 @@ export function CollectionsPage() {
         <label className="select-field compact"><select aria-label="Filtrar por freguesia" value={parish} onChange={event => setParish(event.target.value)}><option value="all">Freguesias</option>{[...new Set(collections.map(collection => collection.parish))].map(value => <option key={value}>{value}</option>)}</select><ChevronDown size={14} /></label>
         <label className="select-field compact"><select aria-label="Filtrar por concelho" value={municipality} onChange={event => setMunicipality(event.target.value)}><option value="all">Concelhos</option>{[...new Set(collections.map(collection => collection.municipality))].map(value => <option key={value}>{value}</option>)}</select><ChevronDown size={14} /></label>
         <label className="select-field compact"><select aria-label="Filtrar por distrito" value={district} onChange={event => setDistrict(event.target.value)}><option value="all">Distritos</option>{[...new Set(collections.map(collection => collection.district))].map(value => <option key={value}>{value}</option>)}</select><ChevronDown size={14} /></label>
-        <span className="filter-count">{visibleCollections.length} coleção</span>
+        <span className="filter-count">{visibleCollections.length} {visibleCollections.length === 1 ? 'coleção' : 'coleções'}</span>
       </div>
 
       <div className="data-table collection-table">
@@ -84,10 +90,13 @@ export function CollectionsPage() {
             <div className="collection-cell"><span className="row-icon"><Archive size={18} /></span><div><strong>{collection.title}</strong><small>{recordTypeLabels[collection.recordType]} · {collection.startYear}–{collection.endYear}</small></div></div>
             <div><strong>{collection.parish}, {collection.municipality}</strong><small>{collection.district}</small></div>
             <div><strong>{collection.documentIds.length} livros</strong><small>{collection.pageCount} páginas</small></div>
-            <div><strong>{formatDate(collection.updatedAt)}</strong><small>por Rui Martins</small></div>
+            <div><strong>{formatDate(collection.updatedAt)}</strong><small>{collection.pageCount} páginas</small></div>
             <span className="row-action">Abrir <ChevronDown size={15} /></span>
           </Link>
         ))}
+        {workspaceStatus === 'ready' && visibleCollections.length === 0 && (
+          <EmptyState icon={<Archive size={22} />} title={collections.length ? 'Nenhuma coleção corresponde aos filtros' : 'Ainda não há coleções'} description={collections.length ? 'Limpe a pesquisa ou os filtros.' : 'Crie a primeira coleção para começar a importar páginas.'} />
+        )}
       </div>
 
       {dialogOpen && (
@@ -105,7 +114,7 @@ export function CollectionsPage() {
               <label className="full-field"><span>Observações</span><textarea value={form.notes} onChange={event => updateForm('notes', event.target.value)} rows={3} /></label>
             </div>
             {error && <p className="error-text">{error}</p>}
-            <div className="dialog-footer"><button className="secondary-button" onClick={() => setDialogOpen(false)} type="button">Cancelar</button><button className="primary-button" type="submit">Criar coleção</button></div>
+            <div className="dialog-footer"><button className="secondary-button" onClick={() => setDialogOpen(false)} type="button">Cancelar</button><button className="primary-button" disabled={saving} type="submit">{saving ? 'A criar…' : 'Criar coleção'}</button></div>
           </form>
         </div>
       )}

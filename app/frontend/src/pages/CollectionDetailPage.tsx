@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import { apiDataService } from '../services/dataService'
 import { useAppStore } from '../stores/useAppStore'
 import type { CreateDocumentInput, RecordType } from '../types/domain'
+import { recordTypeLabels } from '../utils/format'
 import { StatusBadge } from '../components/ui/StatusBadge'
 
 export function CollectionDetailPage() {
@@ -12,7 +13,10 @@ export function CollectionDetailPage() {
   const allDocuments = useAppStore(state => state.documents)
   const pages = useAppStore(state => state.pages)
   const addDocument = useAppStore(state => state.addDocument)
+  const workspaceStatus = useAppStore(state => state.workspaceStatus)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
   const [form, setForm] = useState<CreateDocumentInput>({
     collectionId: collectionId ?? '',
     title: '',
@@ -27,16 +31,30 @@ export function CollectionDetailPage() {
     [allDocuments, collectionId],
   )
 
-  if (!collection) return <main className="page-shell"><h1>Coleção não encontrada</h1></main>
+  if (!collection) return <main className="page-shell"><h1>{workspaceStatus === 'loading' || workspaceStatus === 'idle' ? 'A carregar coleção…' : 'Coleção não encontrada'}</h1></main>
+
+  const openDialog = () => {
+    setForm(current => ({ ...current, collectionId: collection.id, recordType: collection.recordType, startYear: collection.startYear || current.startYear, endYear: collection.startYear || current.endYear }))
+    setError('')
+    setDialogOpen(true)
+  }
 
   const updateForm = <K extends keyof CreateDocumentInput>(key: K, value: CreateDocumentInput[K]) =>
     setForm(current => ({ ...current, [key]: value }))
 
   const createDocument = async (event: React.FormEvent) => {
     event.preventDefault()
-    const document = await apiDataService.createDocument(form)
-    addDocument(document)
-    setDialogOpen(false)
+    setError('')
+    setSaving(true)
+    try {
+      const document = await apiDataService.createDocument(form)
+      addDocument(document)
+      setDialogOpen(false)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível cadastrar o livro.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -44,11 +62,11 @@ export function CollectionDetailPage() {
       <Link className="back-link" to="/collections"><ArrowLeft size={15} /> Coleções</Link>
       <section className="detail-hero">
         <div className="detail-symbol"><BookOpen size={27} /></div>
-        <div className="detail-title"><p className="eyebrow">Coleção · Batismos</p><h1>{collection.title}</h1><p>{collection.notes}</p><div className="metadata-line"><span>{collection.parish}</span><span>{collection.municipality}</span><span>{collection.district}</span><a href={collection.sourceUrl} target="_blank" rel="noreferrer">Fonte digital <ExternalLink size={13} /></a></div></div>
-        <div className="detail-actions"><Link className="secondary-button" to={`/import/${documents[0]?.id}`}><Import size={16} /> Importar imagens</Link><button className="primary-button" onClick={() => setDialogOpen(true)} type="button"><Plus size={16} /> Novo livro</button></div>
+        <div className="detail-title"><p className="eyebrow">Coleção · {recordTypeLabels[collection.recordType] ?? collection.recordType}</p><h1>{collection.title}</h1><p>{collection.notes}</p><div className="metadata-line"><span>{collection.parish}</span><span>{collection.municipality}</span><span>{collection.district}</span>{collection.sourceUrl && <a href={collection.sourceUrl} target="_blank" rel="noreferrer">Fonte digital <ExternalLink size={13} /></a>}</div></div>
+        <div className="detail-actions">{documents[0] && <Link className="secondary-button" to={`/import/${documents[0].id}`}><Import size={16} /> Importar imagens</Link>}<button className="primary-button" onClick={openDialog} type="button"><Plus size={16} /> Novo livro</button></div>
       </section>
       <section className="section-block">
-        <div className="section-heading"><div><h2>Livros da coleção</h2><p>{documents.length} volumes catalogados por ano.</p></div></div>
+        <div className="section-heading"><div><h2>Livros da coleção</h2><p>{documents.length ? `${documents.length} volumes catalogados por ano.` : 'Cadastre um livro para poder importar as imagens das páginas.'}</p></div></div>
         <div className="book-grid">
           {documents.map(document => {
             const documentPages = pages.filter(page => page.documentId === document.id)
@@ -60,7 +78,7 @@ export function CollectionDetailPage() {
                   <h3>{document.title}</h3>
                   <p className="archive-reference">{document.archivalReference}</p>
                   <div className="book-metrics"><span><FileImage size={15} /> {documentPages.length} páginas</span><span>{documentPages.filter(page => page.status === 'reviewed').length} revistas</span></div>
-                  <div className="book-actions"><Link className="secondary-button" to={`/documents/${document.id}`}>Explorar páginas</Link><Link className="icon-button always-visible" to={`/viewer/${documentPages[0]?.id}`} title="Abrir no editor"><ExternalLink size={16} /></Link></div>
+                  <div className="book-actions"><Link className="secondary-button" to={`/documents/${document.id}`}>Explorar páginas</Link>{documentPages[0] ? <Link className="icon-button always-visible" to={`/viewer/${documentPages[0].id}`} title="Abrir no editor"><ExternalLink size={16} /></Link> : <Link className="icon-button always-visible" to={`/import/${document.id}`} title="Importar imagens"><Import size={16} /></Link>}</div>
                 </div>
               </article>
             )
@@ -70,7 +88,7 @@ export function CollectionDetailPage() {
       {dialogOpen && (
         <div className="dialog-backdrop" onMouseDown={event => event.target === event.currentTarget && setDialogOpen(false)} role="presentation">
           <form className="dialog" onSubmit={createDocument}>
-            <div className="dialog-header"><div><p className="eyebrow">Coleção de Tinhela</p><h2>Cadastrar livro</h2></div><button className="icon-button bare" onClick={() => setDialogOpen(false)} type="button"><X size={18} /></button></div>
+            <div className="dialog-header"><div><p className="eyebrow">{collection.title}</p><h2>Cadastrar livro</h2></div><button className="icon-button bare" onClick={() => setDialogOpen(false)} type="button"><X size={18} /></button></div>
             <div className="form-grid">
               <label><span>Título</span><input required value={form.title} onChange={event => updateForm('title', event.target.value)} placeholder="Ex.: Batismos de 1911" /></label>
               <label><span>Tipo documental</span><select value={form.recordType} onChange={event => updateForm('recordType', event.target.value as RecordType)}><option value="batismo">Batismos</option><option value="casamento">Casamentos</option><option value="obito">Óbitos</option></select></label>
@@ -78,7 +96,8 @@ export function CollectionDetailPage() {
               <label><span>Referência arquivística</span><input required value={form.archivalReference} onChange={event => updateForm('archivalReference', event.target.value)} placeholder="PT/ADVRL/PRQ/…" /></label>
               <label className="full-field"><span>URL da fonte</span><input type="url" value={form.sourceUrl} onChange={event => updateForm('sourceUrl', event.target.value)} placeholder="https://…" /></label>
             </div>
-            <div className="dialog-footer"><button className="secondary-button" onClick={() => setDialogOpen(false)} type="button">Cancelar</button><button className="primary-button" type="submit">Cadastrar livro</button></div>
+            {error && <p className="error-text">{error}</p>}
+            <div className="dialog-footer"><button className="secondary-button" onClick={() => setDialogOpen(false)} type="button">Cancelar</button><button className="primary-button" disabled={saving} type="submit">{saving ? 'A cadastrar…' : 'Cadastrar livro'}</button></div>
           </form>
         </div>
       )}

@@ -1,18 +1,25 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
+import subprocess
 import tempfile
+from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
 from PIL import Image
 from pydantic import BaseModel, Field
 
-from database.annotations import pagexml_to_rows, rows_to_pagexml
+from database.annotations import group_records, pagexml_to_rows, rows_to_pagexml
+from segmentation.kraken import KrakenError, executable as kraken_executable
 from ..core.supabase_client import get_supabase_client
 
 router = APIRouter(prefix="/api/pages", tags=["pages"])
+logger = logging.getLogger(__name__)
+SIGNED_URL_TTL = 3600
 
 
 class AnnotationUpdate(BaseModel):
@@ -30,19 +37,53 @@ class AnnotationUpdate(BaseModel):
 
 def _page(page_id: str) -> dict:
     result = get_supabase_client().table("pages").select("*").eq(
-        "id", page_id).single().execute()
+        "id", page_id).limit(1).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Página não encontrada.")
-    return result.data
+    return result.data[0]
 
 
 def _image_url(row: dict) -> str:
-    bucket = row.get("storage_bucket")
-    path = row.get("storage_path")
-    if not bucket or not path:
-        return ""
-    result = get_supabase_client().storage.from_(bucket).create_signed_url(path, 3600)
-    return result.get("signedURL") or result.get("signedUrl") or ""
+    return with_image_urls([row])[0]["image_url"]
+
+
+def with_image_urls(rows: list[dict]) -> list[dict]:
+    """Assina as URLs das imagens em lote; uma imagem ausente não derruba a lista."""
+    by_bucket: dict[str, set[str]] = defaultdict(set)
+    for row in rows:
+        if row.get("storage_bucket") and row.get("storage_path"):
+            by_bucket[row["storage_bucket"]].add(row["storage_path"])
+    urls: dict[tuple[str, str], str] = {}
+    storage = get_supabase_client().storage
+    for bucket, paths in by_bucket.items():
+        try:
+            signed = storage.from_(bucket).create_signed_urls(sorted(paths), SIGNED_URL_TTL)
+        except Exception:
+            logger.exception("Falha ao assinar imagens do bucket %s", bucket)
+            continue
+        for item in signed:
+            url = item.get("signedURL") or item.get("signedUrl")
+            if url and not item.get("error"):
+                urls[(bucket, item["path"])] = url
+    return [{**row, "image_url": urls.get(
+        (row.get("storage_bucket"), row.get("storage_path")), "")} for row in rows]
+
+
+def _origin(row: dict, previous: dict | None) -> str:
+    """Só marca como humana a anotação nova, verificada ou alterada no editor."""
+    if not previous or previous.get("origin") == "human" or row["is_verified"]:
+        return "human"
+    changed = any(row.get(key) != previous.get(key) for key in ("parent_id", "element_type", "reading_order", "polygon", "baseline")) or (
+        (row.get("corrected_text") or None) != (previous.get("corrected_text") or None))
+    return "human" if changed else previous.get("origin") or "kraken"
+
+
+def _verified_at(is_verified: bool, previous: dict | None) -> str | None:
+    if not is_verified:
+        return None
+    if previous and previous.get("is_verified") and previous.get("verified_at"):
+        return previous["verified_at"]
+    return datetime.now(timezone.utc).isoformat()
 
 
 @router.get("")
@@ -51,7 +92,7 @@ def list_pages(document_id: str | None = None) -> list[dict]:
     if document_id:
         query = query.eq("document_id", document_id)
     rows = query.execute().data or []
-    return [{**row, "image_url": _image_url(row)} for row in rows]
+    return with_image_urls(rows)
 
 
 @router.get("/{page_id}")
@@ -80,8 +121,16 @@ async def import_page(
         bucket = os.getenv("SUPABASE_IMAGE_BUCKET", "pages")
         storage_path = f"{document_id}/{digest}{suffix}"
         client = get_supabase_client()
+        duplicate = client.table("pages").select("document_id,page_number").eq(
+            "sha256", digest).limit(1).execute().data
+        if duplicate and (duplicate[0]["document_id"], duplicate[0]["page_number"]) != (
+                document_id, page_number):
+            raise HTTPException(status_code=409, detail=(
+                f"A imagem {file.filename or ''} já foi importada "
+                f"(página {duplicate[0]['page_number']} de outro livro ou deste)."))
         client.storage.from_(bucket).upload(
-            storage_path, content, {"content-type": file.content_type or "image/jpeg"}
+            storage_path, content,
+            {"content-type": file.content_type or "image/jpeg", "upsert": "true"},
         )
         result = client.table("pages").upsert({
             "document_id": document_id, "page_number": page_number,
@@ -109,25 +158,46 @@ def segment_page(page_id: str) -> dict:
         image_path = Path(directory) / f"input{suffix}"
         xml_path = Path(directory) / "page.xml"
         image_path.write_bytes(content)
+        try:
+            kraken = kraken_executable()
+        except KrakenError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         command = [
-            os.getenv("KRAKEN_COMMAND", "kraken"), "--pagexml",
+            kraken, "--pagexml",
             "--raise-on-error", "-i", str(image_path), str(xml_path),
             "segment", "--baseline",
         ]
-        import subprocess
         completed = subprocess.run(command, capture_output=True, text=True, check=False)
         if completed.returncode:
             raise HTTPException(status_code=502, detail=completed.stderr or completed.stdout)
         parsed = pagexml_to_rows(xml_path, page_id)
-        if parsed["rows"]:
+        rows: list[dict] = parsed["rows"]
+        kept_record_ids: set[str] = set()
+        if rows:
             existing = client.table("annotations").select(
-                "id,origin,is_verified"
+                "id,parent_id,element_type,polygon,origin,is_verified"
             ).eq("page_id", page_id).execute().data or []
+            by_id = {row["id"]: row for row in existing}
             protected = {
                 row["id"] for row in existing
                 if row.get("origin") == "human" or row.get("is_verified")
             }
-            candidates = [row for row in parsed["rows"] if row["id"] not in protected]
+            # Os ids do Kraken mudam a cada execução: remove a segmentação automática
+            # anterior, mantendo o que foi revisto e todos os seus ascendentes.
+            keep = set(protected)
+            for row_id in protected:
+                parent = by_id[row_id].get("parent_id")
+                while parent and parent in by_id and parent not in keep:
+                    keep.add(parent)
+                    parent = by_id[parent].get("parent_id")
+            stale = [row["id"] for row in existing if row["id"] not in keep]
+            if stale:
+                client.table("annotations").delete().in_("id", stale).execute()
+            kept_records = [row for row in existing
+                            if row["id"] in keep and row["element_type"] == "record"]
+            kept_record_ids = {row["id"] for row in kept_records}
+            rows = group_records(rows, page_id, existing_records=kept_records)
+            candidates = [row for row in rows if row["id"] not in protected]
             if candidates:
                 client.table("annotations").upsert(
                     candidates, on_conflict="id",
@@ -140,7 +210,13 @@ def segment_page(page_id: str) -> dict:
         client.table("pages").update({
             "pagexml_storage_path": xml_storage_path,
         }).eq("id", page_id).execute()
-        return {"page_id": page_id, "rows": parsed["rows"], "skipped": parsed["skipped"]}
+        kinds = [row["element_type"] for row in rows]
+        record_ids = {row["id"] for row in rows if row["element_type"] == "record"} | {
+            row["parent_id"] for row in rows
+            if row["element_type"] != "record" and row.get("parent_id") in kept_record_ids}
+        return {"page_id": page_id, "lines": kinds.count("line"),
+                "regions": kinds.count("region"), "records": len(record_ids),
+                "skipped": parsed["skipped"]}
 
 
 @router.get("/{page_id}/pagexml")
@@ -174,22 +250,25 @@ def replace_annotations(page_id: str, annotations: list[AnnotationUpdate]) -> li
     _page(page_id)
     client = get_supabase_client()
     existing = client.table("annotations").select(
-        "id,original_polygon,original_baseline,source_xml_id,model_name"
+        "id,parent_id,element_type,reading_order,polygon,baseline,corrected_text,origin,original_polygon,"
+        "original_baseline,source_xml_id,model_name,is_verified,verified_at"
     ).eq("page_id", page_id).execute().data or []
     originals = {row["id"]: row for row in existing}
     incoming_ids = {annotation.id for annotation in annotations}
-    for existing_id in set(originals) - incoming_ids:
-        client.table("annotations").delete().eq("id", existing_id).eq(
+    removed = sorted(set(originals) - incoming_ids)
+    if removed:
+        client.table("annotations").delete().in_("id", removed).eq(
             "page_id", page_id).execute()
     rows = []
     for annotation in annotations:
         row = annotation.model_dump()
         row["page_id"] = page_id
-        row["origin"] = "human"
         previous = originals.get(annotation.id)
+        row["origin"] = _origin(row, previous)
         if previous:
             for key in ("original_polygon", "original_baseline", "source_xml_id", "model_name"):
                 row[key] = previous.get(key)
+        row["verified_at"] = _verified_at(annotation.is_verified, previous)
         rows.append(row)
     if not rows:
         return []
@@ -203,8 +282,7 @@ def update_annotation(page_id: str, annotation_id: str,
     _page(page_id)
     payload = update.model_dump()
     payload["origin"] = "human"
-    if update.is_verified:
-        payload["verified_at"] = "now()"
+    payload["verified_at"] = _verified_at(update.is_verified, None)
     result = get_supabase_client().table("annotations").update(payload).eq(
         "id", annotation_id).eq("page_id", page_id).execute()
     if not result.data:

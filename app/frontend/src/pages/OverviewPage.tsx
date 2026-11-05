@@ -15,13 +15,13 @@ export function OverviewPage() {
       <section className="page-heading heading-with-action">
         <div>
           <p className="eyebrow">Espaço de investigação</p>
-          <h1>Bom trabalho, Rui.</h1>
-          <p>Continue a descrição dos livros paroquiais de Tinhela ou abra uma página recente.</p>
+          <h1>Bom trabalho.</h1>
+          <p>Continue a descrição dos livros paroquiais ou abra uma página recente.</p>
         </div>
-        <Link className="primary-button" to={`/viewer/${pages[0]?.id}`}>
+        {pages[0] && <Link className="primary-button" to={`/viewer/${pages[0].id}`}>
           <ScanLine size={17} />
           Abrir editor
-        </Link>
+        </Link>}
       </section>
 
       <section className="work-summary" aria-label="Resumo do acervo">
@@ -41,11 +41,11 @@ export function OverviewPage() {
         </div>
         {collections.map(collection => (
           <Link className="focus-collection" key={collection.id} to={`/collections/${collection.id}`}>
-            <div className="collection-monogram">BT</div>
+            <div className="collection-monogram">{collection.recordType.slice(0, 2).toUpperCase()}</div>
             <div className="focus-collection-main">
-              <span className="overline">Batismos · 1900–1910</span>
+              <span className="overline">{collection.recordType} · {collection.startYear}–{collection.endYear}</span>
               <h3>{collection.title}</h3>
-              <p>{collection.parish} · {collection.municipality} · Arquivo Distrital de {collection.district}</p>
+              <p>{collection.parish} · {collection.municipality} · {collection.district}</p>
             </div>
             <div className="focus-meta"><strong>{collection.documentIds.length}</strong><span>livros</span></div>
             <div className="focus-meta"><strong>{collection.pageCount}</strong><span>páginas</span></div>
