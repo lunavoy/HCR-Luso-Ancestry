@@ -39,6 +39,7 @@ export function ViewerPage() {
   const undo = useAppStore(state => state.undo)
   const redo = useAppStore(state => state.redo)
   const setAnnotations = useAppStore(state => state.setAnnotations)
+  const loadAnnotations = useAppStore(state => state.loadAnnotations)
   const [leftOpen, setLeftOpen] = useState(true)
   const [rightOpen, setRightOpen] = useState(true)
   const [rightTab, setRightTab] = useState<'annotations' | 'page'>('annotations')
@@ -52,6 +53,11 @@ export function ViewerPage() {
   const pages = useMemo(() => allPages.filter(item => item.documentId === page?.documentId), [allPages, page?.documentId])
   const currentIndex = pages.findIndex(item => item.id === pageId)
   const rotation = page ? (rotations[page.id] ?? page.rotation) : 0
+
+  useEffect(() => {
+    if (!pageId || !page) return
+    loadAnnotations(pageId).catch(error => setSaveError(error instanceof Error ? error.message : 'Falha ao carregar as anotações.'))
+  }, [loadAnnotations, page, pageId])
 
   const savePage = async () => {
     if (!pageId) return
@@ -80,7 +86,7 @@ export function ViewerPage() {
       ? [...polygon].sort((a, b) => b.y - a.y).slice(0, 2).sort((a, b) => a.x - b.x)
       : undefined
     const annotation: Annotation = {
-      id: `${annotationType}-${crypto.randomUUID().slice(0, 8)}`,
+      id: crypto.randomUUID(),
       pageId,
       parentId: parentForType(annotationType),
       type: annotationType,

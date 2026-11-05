@@ -18,6 +18,10 @@ interface AppState {
   selectedAnnotationId?: string
   activeTool: 'select' | 'pan' | 'polygon' | 'vertices' | 'zoom'
   annotationType: Annotation['type']
+  workspaceStatus: 'idle' | 'loading' | 'ready' | 'error'
+  workspaceError?: string
+  loadedAnnotationPages: Record<string, boolean>
+  loadAnnotations: (pageId: string) => Promise<void>
   setTheme: (theme: 'light' | 'dark') => void
   toggleTheme: () => void
   toggleSidebar: () => void
@@ -53,6 +57,21 @@ const pushHistory = (
   }
 }
 
+const withCounts = (collections: Collection[], documents: Document[], pages: Page[]) => {
+  const pagesByDocument = new Map<string, string[]>()
+  pages.forEach(page => pagesByDocument.set(page.documentId, [...(pagesByDocument.get(page.documentId) ?? []), page.id]))
+  const countedDocuments = documents.map(document => ({ ...document, pageIds: pagesByDocument.get(document.id) ?? [] }))
+  const countedCollections = collections.map(collection => {
+    const own = countedDocuments.filter(document => document.collectionId === collection.id)
+    return {
+      ...collection,
+      documentIds: own.map(document => document.id),
+      pageCount: own.reduce((sum, document) => sum + document.pageIds.length, 0),
+    }
+  })
+  return { collections: countedCollections, documents: countedDocuments, pages }
+}
+
 const initialTheme = (): 'light' | 'dark' => {
   const stored = localStorage.getItem('htr-theme')
   if (stored === 'light' || stored === 'dark') return stored
@@ -70,6 +89,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedAnnotationId: undefined,
   activeTool: 'select',
   annotationType: 'line',
+  workspaceStatus: 'idle',
+  workspaceError: undefined,
+  loadedAnnotationPages: {},
   setTheme: theme => {
     localStorage.setItem('htr-theme', theme)
     set({ theme })
@@ -80,25 +102,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   setActiveTool: activeTool => set({ activeTool }),
   setAnnotationType: annotationType => set({ annotationType }),
   addCollection: collection => set(state => ({ collections: [...state.collections, collection] })),
-  addDocument: document => set(state => ({
-    documents: [...state.documents, document],
-    collections: state.collections.map(collection =>
-      collection.id === document.collectionId
-        ? { ...collection, documentIds: [...collection.documentIds, document.id], updatedAt: new Date().toISOString() }
-        : collection,
-    ),
-  })),
-  addPages: pages => set(state => ({
-    pages: [...state.pages, ...pages],
-    documents: state.documents.map(document => {
-      const additions = pages.filter(page => page.documentId === document.id)
-      return additions.length ? { ...document, pageIds: [...document.pageIds, ...additions.map(page => page.id)] } : document
-    }),
-    annotationsByPage: {
-      ...state.annotationsByPage,
-      ...Object.fromEntries(pages.map(page => [page.id, []])),
-    },
-  })),
+  addDocument: document => set(state => withCounts(state.collections, [...state.documents, document], state.pages)),
+  addPages: pages => set(state => {
+    const replaced = new Set(pages.map(page => page.id))
+    return withCounts(state.collections, state.documents, [...state.pages.filter(page => !replaced.has(page.id)), ...pages])
+  }),
   addAnnotation: (pageId, annotation) => set(state =>
     pushHistory(state, pageId, [...(state.annotationsByPage[pageId] ?? []), annotation]),
   ),
@@ -165,21 +173,22 @@ export const useAppStore = create<AppState>((set, get) => ({
     annotationsByPage: { ...state.annotationsByPage, [pageId]: annotations },
   })),
   loadWorkspace: async () => {
-    const collections = await apiDataService.listCollections()
-    const documents = (await Promise.all(
-      collections.flatMap(collection => apiDataService.listDocuments(collection.id)),
-    )).flat()
-    const pages = (await Promise.all(
-      documents.flatMap(document => apiDataService.listPages(document.id)),
-    )).flat()
-    const annotationEntries = await Promise.all(
-      pages.map(async page => [page.id, await apiDataService.listAnnotations(page.id)] as const),
-    )
-    set({
-      collections,
-      documents,
-      pages,
-      annotationsByPage: Object.fromEntries(annotationEntries),
-    })
+    if (get().workspaceStatus === 'loading') return
+    set({ workspaceStatus: 'loading', workspaceError: undefined })
+    try {
+      const workspace = await apiDataService.getWorkspace()
+      set({ ...withCounts(workspace.collections, workspace.documents, workspace.pages), workspaceStatus: 'ready' })
+    } catch (error) {
+      console.error('Não foi possível carregar o workspace:', error)
+      set({ workspaceStatus: 'error', workspaceError: error instanceof Error ? error.message : String(error) })
+    }
+  },
+  loadAnnotations: async pageId => {
+    if (get().loadedAnnotationPages[pageId]) return
+    const annotations = await apiDataService.listAnnotations(pageId)
+    set(state => ({
+      annotationsByPage: { ...state.annotationsByPage, [pageId]: state.annotationsByPage[pageId]?.length ? state.annotationsByPage[pageId] : annotations },
+      loadedAnnotationPages: { ...state.loadedAnnotationPages, [pageId]: true },
+    }))
   },
 }))

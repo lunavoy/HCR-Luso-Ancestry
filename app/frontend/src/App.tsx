@@ -17,9 +17,7 @@ export default function App() {
   const loadWorkspace = useAppStore(state => state.loadWorkspace)
 
   useEffect(() => {
-    void loadWorkspace().catch(error => {
-      console.error('Não foi possível carregar o workspace:', error)
-    })
+    void loadWorkspace()
   }, [loadWorkspace])
 
   return (

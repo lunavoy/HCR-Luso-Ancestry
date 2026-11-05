@@ -35,6 +35,7 @@ export function ImportPage() {
   const addPages = useAppStore(state => state.addPages)
   const [candidates, setCandidates] = useState<ImportCandidate[]>([])
   const [dragging, setDragging] = useState(false)
+  const [importError, setImportError] = useState('')
   const intervalRef = useRef<number | undefined>(undefined)
   const candidatesRef = useRef<ImportCandidate[]>([])
 
@@ -58,17 +59,19 @@ export function ImportPage() {
     intervalRef.current = window.setInterval(() => setCandidates(current => current.map(candidate =>
       candidate.state === 'uploading' ? { ...candidate, progress: Math.min(92, candidate.progress + 12) } : candidate,
     )), 180)
+    setImportError('')
     const valid = candidates.filter(candidate => !candidate.error)
-    const pages = await apiDataService.importImages(documentId, valid.map(candidate => candidate.file))
-    if (intervalRef.current) window.clearInterval(intervalRef.current)
-    setCandidates(current => current.map(candidate => candidate.error ? candidate : { ...candidate, state: 'complete', progress: 100 }))
-    addPages(pages.map((page, index) => ({
-      ...page,
-      width: valid[index]?.width ?? page.width,
-      height: valid[index]?.height ?? page.height,
-      imageUrl: valid[index]?.previewUrl ?? page.imageUrl,
-    })))
-    window.setTimeout(() => navigate(`/documents/${documentId}`), 700)
+    try {
+      const pages = await apiDataService.importImages(documentId, valid.map(candidate => candidate.file))
+      setCandidates(current => current.map(candidate => candidate.error ? candidate : { ...candidate, state: 'complete', progress: 100 }))
+      addPages(pages)
+      window.setTimeout(() => navigate(`/documents/${documentId}`), 700)
+    } catch (reason) {
+      setImportError(reason instanceof Error ? reason.message : 'Falha ao importar as imagens.')
+      setCandidates(current => current.map(candidate => candidate.state === 'uploading' ? { ...candidate, state: 'ready', progress: 0 } : candidate))
+    } finally {
+      if (intervalRef.current) window.clearInterval(intervalRef.current)
+    }
   }
 
   return (
@@ -101,7 +104,7 @@ export function ImportPage() {
               </div>
             ))}
           </div>
-          <div className="queue-footer"><span><AlertTriangle size={15} /> Esta etapa usa armazenamento local simulado.</span><button className="primary-button" disabled={!candidates.some(candidate => !candidate.error) || candidates.some(candidate => candidate.state === 'uploading')} onClick={() => void importFiles()} type="button"><UploadCloud size={16} /> Importar {candidates.filter(candidate => !candidate.error).length} imagens</button></div>
+          <div className="queue-footer"><span>{importError ? <span className="error-text"><AlertTriangle size={15} /> {importError}</span> : 'As imagens são enviadas para o Supabase Storage.'}</span><button className="primary-button" disabled={!candidates.some(candidate => !candidate.error) || candidates.some(candidate => candidate.state === 'uploading')} onClick={() => void importFiles()} type="button"><UploadCloud size={16} /> Importar {candidates.filter(candidate => !candidate.error).length} imagens</button></div>
         </section>
       )}
     </main>

@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
+import subprocess
 import tempfile
+from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
@@ -13,6 +17,8 @@ from database.annotations import pagexml_to_rows, rows_to_pagexml
 from ..core.supabase_client import get_supabase_client
 
 router = APIRouter(prefix="/api/pages", tags=["pages"])
+logger = logging.getLogger(__name__)
+SIGNED_URL_TTL = 3600
 
 
 class AnnotationUpdate(BaseModel):
@@ -30,19 +36,44 @@ class AnnotationUpdate(BaseModel):
 
 def _page(page_id: str) -> dict:
     result = get_supabase_client().table("pages").select("*").eq(
-        "id", page_id).single().execute()
+        "id", page_id).limit(1).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Página não encontrada.")
-    return result.data
+    return result.data[0]
 
 
 def _image_url(row: dict) -> str:
-    bucket = row.get("storage_bucket")
-    path = row.get("storage_path")
-    if not bucket or not path:
-        return ""
-    result = get_supabase_client().storage.from_(bucket).create_signed_url(path, 3600)
-    return result.get("signedURL") or result.get("signedUrl") or ""
+    return with_image_urls([row])[0]["image_url"]
+
+
+def with_image_urls(rows: list[dict]) -> list[dict]:
+    """Assina as URLs das imagens em lote; uma imagem ausente não derruba a lista."""
+    by_bucket: dict[str, set[str]] = defaultdict(set)
+    for row in rows:
+        if row.get("storage_bucket") and row.get("storage_path"):
+            by_bucket[row["storage_bucket"]].add(row["storage_path"])
+    urls: dict[tuple[str, str], str] = {}
+    storage = get_supabase_client().storage
+    for bucket, paths in by_bucket.items():
+        try:
+            signed = storage.from_(bucket).create_signed_urls(sorted(paths), SIGNED_URL_TTL)
+        except Exception:
+            logger.exception("Falha ao assinar imagens do bucket %s", bucket)
+            continue
+        for item in signed:
+            url = item.get("signedURL") or item.get("signedUrl")
+            if url and not item.get("error"):
+                urls[(bucket, item["path"])] = url
+    return [{**row, "image_url": urls.get(
+        (row.get("storage_bucket"), row.get("storage_path")), "")} for row in rows]
+
+
+def _verified_at(is_verified: bool, previous: dict | None) -> str | None:
+    if not is_verified:
+        return None
+    if previous and previous.get("is_verified") and previous.get("verified_at"):
+        return previous["verified_at"]
+    return datetime.now(timezone.utc).isoformat()
 
 
 @router.get("")
@@ -51,7 +82,7 @@ def list_pages(document_id: str | None = None) -> list[dict]:
     if document_id:
         query = query.eq("document_id", document_id)
     rows = query.execute().data or []
-    return [{**row, "image_url": _image_url(row)} for row in rows]
+    return with_image_urls(rows)
 
 
 @router.get("/{page_id}")
@@ -81,7 +112,8 @@ async def import_page(
         storage_path = f"{document_id}/{digest}{suffix}"
         client = get_supabase_client()
         client.storage.from_(bucket).upload(
-            storage_path, content, {"content-type": file.content_type or "image/jpeg"}
+            storage_path, content,
+            {"content-type": file.content_type or "image/jpeg", "upsert": "true"},
         )
         result = client.table("pages").upsert({
             "document_id": document_id, "page_number": page_number,
@@ -114,7 +146,6 @@ def segment_page(page_id: str) -> dict:
             "--raise-on-error", "-i", str(image_path), str(xml_path),
             "segment", "--baseline",
         ]
-        import subprocess
         completed = subprocess.run(command, capture_output=True, text=True, check=False)
         if completed.returncode:
             raise HTTPException(status_code=502, detail=completed.stderr or completed.stdout)
@@ -174,12 +205,13 @@ def replace_annotations(page_id: str, annotations: list[AnnotationUpdate]) -> li
     _page(page_id)
     client = get_supabase_client()
     existing = client.table("annotations").select(
-        "id,original_polygon,original_baseline,source_xml_id,model_name"
+        "id,original_polygon,original_baseline,source_xml_id,model_name,is_verified,verified_at"
     ).eq("page_id", page_id).execute().data or []
     originals = {row["id"]: row for row in existing}
     incoming_ids = {annotation.id for annotation in annotations}
-    for existing_id in set(originals) - incoming_ids:
-        client.table("annotations").delete().eq("id", existing_id).eq(
+    removed = sorted(set(originals) - incoming_ids)
+    if removed:
+        client.table("annotations").delete().in_("id", removed).eq(
             "page_id", page_id).execute()
     rows = []
     for annotation in annotations:
@@ -190,6 +222,7 @@ def replace_annotations(page_id: str, annotations: list[AnnotationUpdate]) -> li
         if previous:
             for key in ("original_polygon", "original_baseline", "source_xml_id", "model_name"):
                 row[key] = previous.get(key)
+        row["verified_at"] = _verified_at(annotation.is_verified, previous)
         rows.append(row)
     if not rows:
         return []
@@ -203,8 +236,7 @@ def update_annotation(page_id: str, annotation_id: str,
     _page(page_id)
     payload = update.model_dump()
     payload["origin"] = "human"
-    if update.is_verified:
-        payload["verified_at"] = "now()"
+    payload["verified_at"] = _verified_at(update.is_verified, None)
     result = get_supabase_client().table("annotations").update(payload).eq(
         "id", annotation_id).eq("page_id", page_id).execute()
     if not result.data:

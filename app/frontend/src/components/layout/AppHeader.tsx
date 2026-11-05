@@ -35,7 +35,7 @@ export function AppHeader() {
           {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
           <span>{theme === 'dark' ? 'Tema claro' : 'Tema escuro'}</span>
         </button>
-        <div className="user-avatar" title="Perfil local de demonstração">RM</div>
+        <div className="user-avatar" title="Uso local, sem login">HTR</div>
       </div>
     </header>
   )

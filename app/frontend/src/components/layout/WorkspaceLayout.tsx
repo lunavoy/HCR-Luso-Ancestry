@@ -2,6 +2,7 @@ import { Outlet, useLocation } from 'react-router-dom'
 import { useEffect } from 'react'
 import { AppHeader } from './AppHeader'
 import { AppSidebar } from './AppSidebar'
+import { WorkspaceStatusBanner } from './WorkspaceStatusBanner'
 import { useAppStore } from '../../stores/useAppStore'
 
 export function WorkspaceLayout() {
@@ -18,6 +19,7 @@ export function WorkspaceLayout() {
       <AppSidebar />
       <div className="workspace-column">
         <AppHeader />
+        {!viewerMode && <WorkspaceStatusBanner />}
         <Outlet />
       </div>
     </div>

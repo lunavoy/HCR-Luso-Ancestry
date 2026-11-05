@@ -392,3 +392,10 @@ select { appearance: none; }
   .viewer-toolbar { gap: 2px; }
   .zoom-controls .icon-button:nth-of-type(4), .zoom-controls .icon-button:nth-of-type(5) { display: none; }
 }
+
+.workspace-banner { display: flex; align-items: center; gap: 10px; margin: 12px 24px 0; padding: 10px 14px; color: var(--text-secondary); font-size: 12px; background: var(--accent-soft); border-radius: 8px; }
+.workspace-banner.is-error { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.workspace-banner span { flex: 1; }
+.workspace-banner .spin { animation: workspace-spin 1s linear infinite; }
+@keyframes workspace-spin { to { transform: rotate(360deg); } }
+.unsaved-indicator { color: var(--warning, #b7853b); font-weight: 600; }
