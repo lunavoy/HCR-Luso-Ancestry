@@ -121,6 +121,13 @@ async def import_page(
         bucket = os.getenv("SUPABASE_IMAGE_BUCKET", "pages")
         storage_path = f"{document_id}/{digest}{suffix}"
         client = get_supabase_client()
+        duplicate = client.table("pages").select("document_id,page_number").eq(
+            "sha256", digest).limit(1).execute().data
+        if duplicate and (duplicate[0]["document_id"], duplicate[0]["page_number"]) != (
+                document_id, page_number):
+            raise HTTPException(status_code=409, detail=(
+                f"A imagem {file.filename or ''} já foi importada "
+                f"(página {duplicate[0]['page_number']} de outro livro ou deste)."))
         client.storage.from_(bucket).upload(
             storage_path, content,
             {"content-type": file.content_type or "image/jpeg", "upsert": "true"},
