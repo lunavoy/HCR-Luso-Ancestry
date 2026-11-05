@@ -15,11 +15,12 @@ def test_accepts_secret_key():
 def test_untouched_kraken_annotation_keeps_origin():
     from app.backend.app.api.pages import _origin
 
-    previous = {"origin": "kraken", "parent_id": "r", "polygon": [[0, 0], [1, 0], [1, 1]],
+    previous = {"origin": "kraken", "parent_id": "r", "element_type": "line", "reading_order": 2, "polygon": [[0, 0], [1, 0], [1, 1]],
                 "baseline": None, "corrected_text": None}
-    row = {"is_verified": False, "parent_id": "r", "polygon": [[0, 0], [1, 0], [1, 1]],
+    row = {"is_verified": False, "parent_id": "r", "element_type": "line", "reading_order": 2, "polygon": [[0, 0], [1, 0], [1, 1]],
            "baseline": None, "corrected_text": ""}
     assert _origin(row, previous) == "kraken"
     assert _origin({**row, "polygon": [[0, 0], [2, 0], [2, 2]]}, previous) == "human"
     assert _origin({**row, "is_verified": True}, previous) == "human"
+    assert _origin({**row, "reading_order": 1}, previous) == "human"
     assert _origin(row, None) == "human"
