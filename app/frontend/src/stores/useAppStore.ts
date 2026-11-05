@@ -21,7 +21,7 @@ interface AppState {
   workspaceStatus: 'idle' | 'loading' | 'ready' | 'error'
   workspaceError?: string
   loadedAnnotationPages: Record<string, boolean>
-  loadAnnotations: (pageId: string) => Promise<void>
+  loadAnnotations: (pageId: string, options?: { force?: boolean }) => Promise<void>
   setTheme: (theme: 'light' | 'dark') => void
   toggleTheme: () => void
   toggleSidebar: () => void
@@ -183,12 +183,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ workspaceStatus: 'error', workspaceError: error instanceof Error ? error.message : String(error) })
     }
   },
-  loadAnnotations: async pageId => {
-    if (get().loadedAnnotationPages[pageId]) return
+  loadAnnotations: async (pageId, options) => {
+    if (!options?.force && get().loadedAnnotationPages[pageId]) return
     const annotations = await apiDataService.listAnnotations(pageId)
     set(state => ({
       annotationsByPage: { ...state.annotationsByPage, [pageId]: annotations },
       loadedAnnotationPages: { ...state.loadedAnnotationPages, [pageId]: true },
+      ...(options?.force ? { histories: { ...state.histories, [pageId]: { past: [], future: [] } } } : {}),
     }))
   },
 }))

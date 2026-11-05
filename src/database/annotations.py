@@ -105,45 +105,101 @@ def pagexml_to_rows(xml_path: Path, page_id: str,
     }
 
 
+def _bbox(polygon: list[Point]) -> tuple[int, int, int, int]:
+    xs = [x for x, _ in polygon]
+    ys = [y for _, y in polygon]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _rect(x0: int, y0: int, x1: int, y1: int, pad: int) -> list[list[int]]:
+    x0, y0, x1, y1 = max(x0 - pad, 0), max(y0 - pad, 0), x1 + pad, y1 + pad
+    return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+
+
+def _auto_row(page_uuid: uuid.UUID, source_id: str, kind: str, polygon: list[list[int]],
+              order: int, parent_id: str | None) -> dict[str, Any]:
+    return {
+        "id": str(uuid.uuid5(page_uuid, source_id)), "page_id": str(page_uuid),
+        "parent_id": parent_id, "element_type": kind, "polygon": polygon,
+        "baseline": None, "reading_order": order, "predicted_text": None,
+        "corrected_text": None, "confidence": None, "is_verified": False,
+        "model_name": "kraken+espacos", "source_xml_id": source_id, "origin": "kraken",
+        "original_polygon": [point[:] for point in polygon], "original_baseline": None,
+        "line_type": None,
+    }
+
+
 def group_records(rows: list[dict[str, Any]], page_id: str, *,
+                  existing_records: list[dict[str, Any]] = (),
                   gap_factor: float = 1.8, pad: int = 8) -> list[dict[str, Any]]:
-    """Agrupa as linhas em registros (assentos) separando-os pelos espaços verticais
-    maiores do que ``gap_factor`` vezes o espaçamento mediano entre linhas."""
-    boxes = []
-    for row in rows:
-        if row["element_type"] == "line" and row.get("polygon"):
-            xs = [x for x, _ in row["polygon"]]
-            ys = [y for _, y in row["polygon"]]
-            boxes.append((min(xs), min(ys), max(xs), max(ys)))
-    if not boxes:
-        return []
-    boxes.sort(key=lambda b: (b[1] + b[3]) / 2)
-    centers = [(b[1] + b[3]) / 2 for b in boxes]
-    spacings = sorted(b - a for a, b in zip(centers, centers[1:]))
-    median = spacings[len(spacings) // 2] if spacings else 0
-    groups = [[boxes[0]]]
-    for box, gap in zip(boxes[1:], (b - a for a, b in zip(centers, centers[1:]))):
+    """Agrupa as linhas em registros (assentos), separando-os pelos espaços verticais
+    maiores do que ``gap_factor`` vezes o espaçamento mediano entre linhas.
+
+    Devolve as linhas originais com a hierarquia registro → região → linha: regiões
+    que atravessam mais de um registro são divididas. Grupos cujo centro cai num
+    registro de ``existing_records`` (revistos) ficam ligados a ele em vez de gerar
+    um registro novo."""
+    page_uuid = uuid.UUID(str(page_id))
+    lines = [row for row in rows if row["element_type"] == "line" and row.get("polygon")]
+    if not lines:
+        return rows
+    center = lambda row: (_bbox(row["polygon"])[1] + _bbox(row["polygon"])[3]) / 2
+    lines.sort(key=center)
+    centers = [center(row) for row in lines]
+    gaps = [b - a for a, b in zip(centers, centers[1:])]
+    median = sorted(gaps)[len(gaps) // 2] if gaps else 0
+    groups = [[lines[0]]]
+    for line, gap in zip(lines[1:], gaps):
         if median and gap > gap_factor * median:
             groups.append([])
-        groups[-1].append(box)
-    page_uuid = uuid.UUID(str(page_id))
-    records = []
+        groups[-1].append(line)
+
+    def covering(box: tuple[int, int, int, int]) -> str | None:
+        cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+        for record in existing_records:
+            x0, y0, x1, y1 = _bbox(record["polygon"])
+            if x0 <= cx <= x1 and y0 <= cy <= y1:
+                return record["id"]
+        return None
+
+    records: list[dict[str, Any]] = []
+    record_of: dict[str, str] = {}
     for index, group in enumerate(groups):
-        x0, y0 = min(b[0] for b in group) - pad, min(b[1] for b in group) - pad
-        x1, y1 = max(b[2] for b in group) + pad, max(b[3] for b in group) + pad
-        x0, y0 = max(x0, 0), max(y0, 0)
-        polygon = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
-        source_id = f"record-{index}"
-        records.append({
-            "id": str(uuid.uuid5(page_uuid, source_id)), "page_id": str(page_uuid),
-            "parent_id": None, "element_type": "record", "polygon": polygon,
-            "baseline": None, "reading_order": index, "predicted_text": None,
-            "corrected_text": None, "confidence": None, "is_verified": False,
-            "model_name": "kraken+espacos", "source_xml_id": source_id, "origin": "kraken",
-            "original_polygon": [point[:] for point in polygon], "original_baseline": None,
-            "line_type": None,
-        })
-    return records
+        boxes = [_bbox(line["polygon"]) for line in group]
+        box = (min(b[0] for b in boxes), min(b[1] for b in boxes),
+               max(b[2] for b in boxes), max(b[3] for b in boxes))
+        record_id = covering(box)
+        if record_id is None:
+            record = _auto_row(page_uuid, f"record-{index}", "record", _rect(*box, pad), index, None)
+            records.append(record)
+            record_id = record["id"]
+        for line in group:
+            record_of[line["id"]] = record_id
+
+    regions = {row["id"]: row for row in rows if row["element_type"] == "region"}
+    split_regions: list[dict[str, Any]] = []
+    for region_id, region in regions.items():
+        children = [line for line in lines if line.get("parent_id") == region_id]
+        owners = sorted({record_of[line["id"]] for line in children})
+        if len(owners) <= 1:
+            region["parent_id"] = owners[0] if owners else None
+            continue
+        region["_drop"] = True
+        for part, owner in enumerate(owners):
+            members = [line for line in children if record_of[line["id"]] == owner]
+            boxes = [_bbox(line["polygon"]) for line in members]
+            box = (min(b[0] for b in boxes), min(b[1] for b in boxes),
+                   max(b[2] for b in boxes), max(b[3] for b in boxes))
+            sub = _auto_row(page_uuid, f"{region['source_xml_id']}-part-{part}", "region",
+                            _rect(*box, pad // 2), region["reading_order"], owner)
+            split_regions.append(sub)
+            for line in members:
+                line["parent_id"] = sub["id"]
+    for line in lines:
+        if not line.get("parent_id"):
+            line["parent_id"] = record_of[line["id"]]
+    kept = [row for row in rows if not row.pop("_drop", False)]
+    return records + split_regions + kept
 
 
 def rows_to_pagexml(rows: list[dict[str, Any]], *, image_filename: str,

@@ -155,27 +155,31 @@ def segment_page(page_id: str) -> dict:
         if completed.returncode:
             raise HTTPException(status_code=502, detail=completed.stderr or completed.stdout)
         parsed = pagexml_to_rows(xml_path, page_id)
-        records: list[dict] = []
-        if parsed["rows"]:
+        rows: list[dict] = parsed["rows"]
+        if rows:
             existing = client.table("annotations").select(
-                "id,parent_id,element_type,origin,is_verified"
+                "id,parent_id,element_type,polygon,origin,is_verified"
             ).eq("page_id", page_id).execute().data or []
+            by_id = {row["id"]: row for row in existing}
             protected = {
                 row["id"] for row in existing
                 if row.get("origin") == "human" or row.get("is_verified")
             }
             # Os ids do Kraken mudam a cada execução: remove a segmentação automática
-            # anterior, mantendo o que foi revisto e os pais de anotações revistas.
-            keep = protected | {
-                row["parent_id"] for row in existing
-                if row["id"] in protected and row.get("parent_id")
-            }
+            # anterior, mantendo o que foi revisto e todos os seus ascendentes.
+            keep = set(protected)
+            for row_id in protected:
+                parent = by_id[row_id].get("parent_id")
+                while parent and parent in by_id and parent not in keep:
+                    keep.add(parent)
+                    parent = by_id[parent].get("parent_id")
             stale = [row["id"] for row in existing if row["id"] not in keep]
             if stale:
                 client.table("annotations").delete().in_("id", stale).execute()
-            if not any(row["element_type"] == "record" and row["id"] in keep for row in existing):
-                records = group_records(parsed["rows"], page_id)
-            candidates = [row for row in records + parsed["rows"] if row["id"] not in protected]
+            kept_records = [row for row in existing
+                            if row["id"] in keep and row["element_type"] == "record"]
+            rows = group_records(rows, page_id, existing_records=kept_records)
+            candidates = [row for row in rows if row["id"] not in protected]
             if candidates:
                 client.table("annotations").upsert(
                     candidates, on_conflict="id",
@@ -188,9 +192,9 @@ def segment_page(page_id: str) -> dict:
         client.table("pages").update({
             "pagexml_storage_path": xml_storage_path,
         }).eq("id", page_id).execute()
-        kinds = [row["element_type"] for row in parsed["rows"]]
+        kinds = [row["element_type"] for row in rows]
         return {"page_id": page_id, "lines": kinds.count("line"),
-                "regions": kinds.count("region"), "records": len(records),
+                "regions": kinds.count("region"), "records": kinds.count("record"),
                 "skipped": parsed["skipped"]}
 
 

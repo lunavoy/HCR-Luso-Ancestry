@@ -92,7 +92,7 @@ export function ViewerPage() {
     setSegmenting(true)
     try {
       const result = await apiDataService.segmentPage(pageId)
-      await loadAnnotations(pageId)
+      await loadAnnotations(pageId, { force: true })
       setSegmentInfo(`Segmentação concluída: ${result.lines} linhas, ${result.regions} regiões, ${result.records} registros.`)
       window.setTimeout(() => setSegmentInfo(''), 6000)
     } catch (error) {

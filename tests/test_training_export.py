@@ -20,15 +20,35 @@ def test_public_keys_are_rejected():
     assert not _is_public_key("sb_secret_x")
 
 
-def test_group_records_splits_on_large_gaps():
+def _line(row_id, y, parent=None):
+    return {"id": row_id, "element_type": "line", "parent_id": parent,
+            "polygon": [[10, y], [500, y], [500, y + 20], [10, y + 20]]}
+
+
+def test_group_records_splits_regions_per_record():
     import uuid
     from src.database.annotations import group_records
 
-    def line(y):
-        return {"element_type": "line", "polygon": [[10, y], [500, y], [500, y + 20], [10, y + 20]]}
+    region = {"id": "r", "element_type": "region", "parent_id": None, "reading_order": 0,
+              "source_xml_id": "r", "polygon": [[0, 0], [600, 0], [600, 300], [0, 300]]}
+    lines = [_line(f"l{i}", y, "r") for i, y in enumerate((0, 30, 60, 90, 200, 230, 260))]
+    rows = group_records([region, *lines], str(uuid.uuid4()))
+    records = [r for r in rows if r["element_type"] == "record"]
+    regions = [r for r in rows if r["element_type"] == "region"]
+    assert len(records) == 2 and len(regions) == 2
+    assert {r["parent_id"] for r in regions} == {r["id"] for r in records}
+    by_id = {r["id"]: r for r in rows}
+    owner = lambda line: by_id[line["parent_id"]]["parent_id"]
+    assert owner(by_id["l0"]) != owner(by_id["l6"])
 
-    rows = [line(y) for y in (0, 30, 60, 90, 200, 230, 260)]
-    records = group_records(rows, str(uuid.uuid4()))
-    assert len(records) == 2
-    assert all(r["element_type"] == "record" for r in records)
-    assert records[0]["polygon"][2][1] < records[1]["polygon"][0][1]
+
+def test_group_records_reuses_reviewed_record():
+    import uuid
+    from src.database.annotations import group_records
+
+    reviewed = {"id": "kept", "polygon": [[0, 0], [600, 0], [600, 120], [0, 120]]}
+    lines = [_line(f"l{i}", y) for i, y in enumerate((0, 30, 60, 90, 200, 230, 260))]
+    rows = group_records(lines, str(uuid.uuid4()), existing_records=[reviewed])
+    records = [r for r in rows if r["element_type"] == "record"]
+    assert len(records) == 1
+    assert next(r for r in rows if r["id"] == "l0")["parent_id"] == "kept"
