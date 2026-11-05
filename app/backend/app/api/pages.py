@@ -69,6 +69,15 @@ def with_image_urls(rows: list[dict]) -> list[dict]:
         (row.get("storage_bucket"), row.get("storage_path")), "")} for row in rows]
 
 
+def _origin(row: dict, previous: dict | None) -> str:
+    """Só marca como humana a anotação nova, verificada ou alterada no editor."""
+    if not previous or previous.get("origin") == "human" or row["is_verified"]:
+        return "human"
+    changed = any(row.get(key) != previous.get(key) for key in ("parent_id", "polygon", "baseline")) or (
+        (row.get("corrected_text") or None) != (previous.get("corrected_text") or None))
+    return "human" if changed else previous.get("origin") or "kraken"
+
+
 def _verified_at(is_verified: bool, previous: dict | None) -> str | None:
     if not is_verified:
         return None
@@ -234,7 +243,8 @@ def replace_annotations(page_id: str, annotations: list[AnnotationUpdate]) -> li
     _page(page_id)
     client = get_supabase_client()
     existing = client.table("annotations").select(
-        "id,original_polygon,original_baseline,source_xml_id,model_name,is_verified,verified_at"
+        "id,parent_id,polygon,baseline,corrected_text,origin,original_polygon,"
+        "original_baseline,source_xml_id,model_name,is_verified,verified_at"
     ).eq("page_id", page_id).execute().data or []
     originals = {row["id"]: row for row in existing}
     incoming_ids = {annotation.id for annotation in annotations}
@@ -246,8 +256,8 @@ def replace_annotations(page_id: str, annotations: list[AnnotationUpdate]) -> li
     for annotation in annotations:
         row = annotation.model_dump()
         row["page_id"] = page_id
-        row["origin"] = "human"
         previous = originals.get(annotation.id)
+        row["origin"] = _origin(row, previous)
         if previous:
             for key in ("original_polygon", "original_baseline", "source_xml_id", "model_name"):
                 row[key] = previous.get(key)
