@@ -51,6 +51,8 @@ export function ViewerPage() {
   const [saved, setSaved] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [saveError, setSaveError] = useState('')
+  const [segmenting, setSegmenting] = useState(false)
+  const [segmentInfo, setSegmentInfo] = useState('')
   const selectedAnnotation = annotations.find(annotation => annotation.id === selectedId)
   const pages = useMemo(() => allPages.filter(item => item.documentId === page?.documentId), [allPages, page?.documentId])
   const currentIndex = pages.findIndex(item => item.id === pageId)
@@ -79,6 +81,24 @@ export function ViewerPage() {
       window.setTimeout(() => setSaved(false), 1800)
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : 'Falha ao guardar as anotações.')
+    }
+  }
+
+  const segmentPage = async () => {
+    if (!pageId || !annotationsReady || segmenting) return
+    if (history?.past.length && !window.confirm('A segmentação recarrega as anotações do servidor e descarta alterações não guardadas. Continuar?')) return
+    setSaveError('')
+    setSegmentInfo('')
+    setSegmenting(true)
+    try {
+      const result = await apiDataService.segmentPage(pageId)
+      await loadAnnotations(pageId)
+      setSegmentInfo(`Segmentação concluída: ${result.lines} linhas, ${result.regions} regiões, ${result.records} registros.`)
+      window.setTimeout(() => setSegmentInfo(''), 6000)
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Falha na segmentação.')
+    } finally {
+      setSegmenting(false)
     }
   }
 
@@ -203,7 +223,9 @@ export function ViewerPage() {
         onRedo={() => redo(pageId)}
         onRotate={() => setRotations(current => ({ ...current, [page.id]: (rotation + 90) % 360 }))}
         onSave={() => void savePage()}
-        saveDisabled={!annotationsReady}
+        saveDisabled={!annotationsReady || segmenting}
+        onSegment={() => void segmentPage()}
+        segmenting={segmenting}
         onTool={setTool}
         onUndo={() => undo(pageId)}
         tool={tool}
@@ -256,6 +278,7 @@ export function ViewerPage() {
         <span>X/Y em coordenadas originais</span>
         <button onClick={() => setHelpOpen(true)} type="button"><CircleHelp size={13} /> Atalhos</button>
         {saved && <strong className="saved-toast">Alterações guardadas no servidor</strong>}
+        {segmentInfo && <strong className="saved-toast">{segmentInfo}</strong>}
         {saveError && <strong className="saved-toast">{saveError}</strong>}
         {!annotationsReady && !loadError && <strong className="saved-toast">A carregar anotações…</strong>}
         {loadError && <strong className="saved-toast">{loadError} <button className="secondary-button" onClick={() => { setLoadError(''); fetchAnnotations() }} type="button">Tentar novamente</button></strong>}

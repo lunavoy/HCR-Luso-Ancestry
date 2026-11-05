@@ -99,13 +99,17 @@ const toPage = (row: Record<string, unknown>): Page => ({
   importedAt: String(row.created_at ?? row.imported_at ?? new Date().toISOString()),
 })
 
-const toDocument = (row: Record<string, unknown>): Document => ({
+const toDocument = (row: Record<string, unknown>): Document => {
+  const meta = (row.metadata ?? {}) as Record<string, unknown>
+  return {
   id: String(row.id), collectionId: String(row.collection_id), title: String(row.title),
-  recordType: row.record_type as Document['recordType'], startYear: Number(row.start_year),
-  endYear: Number(row.end_year), archivalReference: String(row.archival_reference ?? ''),
+  recordType: (row.record_type ?? meta.record_type) as Document['recordType'],
+  startYear: Number(row.start_year ?? meta.start_year), endYear: Number(row.end_year ?? meta.end_year),
+  archivalReference: String(row.archival_reference ?? row.source_reference ?? ''),
   sourceUrl: String(row.source_url ?? ''), pageIds: (row.page_ids ?? []) as string[],
   status: (row.status ?? 'imported') as Document['status'],
-})
+  }
+}
 
 const toCollection = (row: Record<string, unknown>): Collection => ({
   id: String(row.id), title: String(row.title),
@@ -143,7 +147,15 @@ const toAnnotation = (row: Record<string, unknown>): Annotation => ({
   originalBaseline: toPoints(row.original_baseline),
 })
 
-export const apiDataService: DataService & { getWorkspace(): Promise<Workspace> } = {
+export interface SegmentResult { lines: number, regions: number, records: number }
+
+export const apiDataService: DataService & {
+  getWorkspace(): Promise<Workspace>
+  segmentPage(pageId: string): Promise<SegmentResult>
+} = {
+  async segmentPage(pageId) {
+    return api(`/pages/${pageId}/segment`, { method: 'POST' })
+  },
   async getWorkspace() {
     const data = await api('/workspace')
     return {

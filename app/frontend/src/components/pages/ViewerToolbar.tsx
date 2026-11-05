@@ -39,6 +39,8 @@ export function ViewerToolbar({
   onRotate,
   onSave,
   saveDisabled,
+  onSegment,
+  segmenting,
 }: {
   canvas: React.RefObject<PageCanvasHandle | null>
   tool: Tool
@@ -56,6 +58,8 @@ export function ViewerToolbar({
   onRotate: () => void
   onSave: () => void
   saveDisabled?: boolean
+  onSegment?: () => void
+  segmenting?: boolean
 }) {
   return (
     <div className="viewer-toolbar">
@@ -90,6 +94,7 @@ export function ViewerToolbar({
         <IconButton label="Centralizar" onClick={() => canvas.current?.center()}><Focus size={17} /></IconButton>
         <IconButton label="Rodar 90°" onClick={onRotate}><RotateCw size={17} /></IconButton>
       </div>
+      {onSegment && <button className="secondary-button" disabled={segmenting || saveDisabled} onClick={onSegment} title="Detetar linhas e registros com o Kraken" type="button"><ScanLine size={16} /> {segmenting ? 'A segmentar…' : 'Segmentar'}</button>}
       <button className="save-button" disabled={saveDisabled} onClick={onSave} type="button"><Check size={16} /> Guardar</button>
     </div>
   )

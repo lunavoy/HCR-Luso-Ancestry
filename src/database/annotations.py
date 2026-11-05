@@ -105,6 +105,47 @@ def pagexml_to_rows(xml_path: Path, page_id: str,
     }
 
 
+def group_records(rows: list[dict[str, Any]], page_id: str, *,
+                  gap_factor: float = 1.8, pad: int = 8) -> list[dict[str, Any]]:
+    """Agrupa as linhas em registros (assentos) separando-os pelos espaços verticais
+    maiores do que ``gap_factor`` vezes o espaçamento mediano entre linhas."""
+    boxes = []
+    for row in rows:
+        if row["element_type"] == "line" and row.get("polygon"):
+            xs = [x for x, _ in row["polygon"]]
+            ys = [y for _, y in row["polygon"]]
+            boxes.append((min(xs), min(ys), max(xs), max(ys)))
+    if not boxes:
+        return []
+    boxes.sort(key=lambda b: (b[1] + b[3]) / 2)
+    centers = [(b[1] + b[3]) / 2 for b in boxes]
+    spacings = sorted(b - a for a, b in zip(centers, centers[1:]))
+    median = spacings[len(spacings) // 2] if spacings else 0
+    groups = [[boxes[0]]]
+    for box, gap in zip(boxes[1:], (b - a for a, b in zip(centers, centers[1:]))):
+        if median and gap > gap_factor * median:
+            groups.append([])
+        groups[-1].append(box)
+    page_uuid = uuid.UUID(str(page_id))
+    records = []
+    for index, group in enumerate(groups):
+        x0, y0 = min(b[0] for b in group) - pad, min(b[1] for b in group) - pad
+        x1, y1 = max(b[2] for b in group) + pad, max(b[3] for b in group) + pad
+        x0, y0 = max(x0, 0), max(y0, 0)
+        polygon = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+        source_id = f"record-{index}"
+        records.append({
+            "id": str(uuid.uuid5(page_uuid, source_id)), "page_id": str(page_uuid),
+            "parent_id": None, "element_type": "record", "polygon": polygon,
+            "baseline": None, "reading_order": index, "predicted_text": None,
+            "corrected_text": None, "confidence": None, "is_verified": False,
+            "model_name": "kraken+espacos", "source_xml_id": source_id, "origin": "kraken",
+            "original_polygon": [point[:] for point in polygon], "original_baseline": None,
+            "line_type": None,
+        })
+    return records
+
+
 def rows_to_pagexml(rows: list[dict[str, Any]], *, image_filename: str,
                     width: int, height: int) -> str:
     missing = [row.get("source_xml_id") or row["id"] for row in rows

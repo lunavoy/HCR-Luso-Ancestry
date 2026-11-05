@@ -13,7 +13,8 @@ from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
 from PIL import Image
 from pydantic import BaseModel, Field
 
-from database.annotations import pagexml_to_rows, rows_to_pagexml
+from database.annotations import group_records, pagexml_to_rows, rows_to_pagexml
+from segmentation.kraken import KrakenError, executable as kraken_executable
 from ..core.supabase_client import get_supabase_client
 
 router = APIRouter(prefix="/api/pages", tags=["pages"])
@@ -141,8 +142,12 @@ def segment_page(page_id: str) -> dict:
         image_path = Path(directory) / f"input{suffix}"
         xml_path = Path(directory) / "page.xml"
         image_path.write_bytes(content)
+        try:
+            kraken = kraken_executable()
+        except KrakenError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         command = [
-            os.getenv("KRAKEN_COMMAND", "kraken"), "--pagexml",
+            kraken, "--pagexml",
             "--raise-on-error", "-i", str(image_path), str(xml_path),
             "segment", "--baseline",
         ]
@@ -150,15 +155,27 @@ def segment_page(page_id: str) -> dict:
         if completed.returncode:
             raise HTTPException(status_code=502, detail=completed.stderr or completed.stdout)
         parsed = pagexml_to_rows(xml_path, page_id)
+        records: list[dict] = []
         if parsed["rows"]:
             existing = client.table("annotations").select(
-                "id,origin,is_verified"
+                "id,parent_id,element_type,origin,is_verified"
             ).eq("page_id", page_id).execute().data or []
             protected = {
                 row["id"] for row in existing
                 if row.get("origin") == "human" or row.get("is_verified")
             }
-            candidates = [row for row in parsed["rows"] if row["id"] not in protected]
+            # Os ids do Kraken mudam a cada execução: remove a segmentação automática
+            # anterior, mantendo o que foi revisto e os pais de anotações revistas.
+            keep = protected | {
+                row["parent_id"] for row in existing
+                if row["id"] in protected and row.get("parent_id")
+            }
+            stale = [row["id"] for row in existing if row["id"] not in keep]
+            if stale:
+                client.table("annotations").delete().in_("id", stale).execute()
+            if not any(row["element_type"] == "record" and row["id"] in keep for row in existing):
+                records = group_records(parsed["rows"], page_id)
+            candidates = [row for row in records + parsed["rows"] if row["id"] not in protected]
             if candidates:
                 client.table("annotations").upsert(
                     candidates, on_conflict="id",
@@ -171,7 +188,10 @@ def segment_page(page_id: str) -> dict:
         client.table("pages").update({
             "pagexml_storage_path": xml_storage_path,
         }).eq("id", page_id).execute()
-        return {"page_id": page_id, "rows": parsed["rows"], "skipped": parsed["skipped"]}
+        kinds = [row["element_type"] for row in parsed["rows"]]
+        return {"page_id": page_id, "lines": kinds.count("line"),
+                "regions": kinds.count("region"), "records": len(records),
+                "skipped": parsed["skipped"]}
 
 
 @router.get("/{page_id}/pagexml")

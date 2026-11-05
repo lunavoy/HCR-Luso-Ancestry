@@ -87,7 +87,16 @@ class DocumentCreate(BaseModel):
 
 @router.post("/documents")
 def create_document(payload: DocumentCreate) -> dict:
-    return _insert("documents", payload.model_dump(exclude_none=True), "o livro")
+    metadata = {key: value for key, value in {
+        "record_type": payload.record_type, "start_year": payload.start_year,
+        "end_year": payload.end_year,
+    }.items() if value is not None}
+    row = {
+        "collection_id": payload.collection_id, "title": payload.title,
+        "source_url": payload.source_url, "source_reference": payload.archival_reference,
+        "metadata": metadata,
+    }
+    return _insert("documents", {k: v for k, v in row.items() if v is not None}, "o livro")
 
 
 @router.get("/documents/{document_id}/pages")
