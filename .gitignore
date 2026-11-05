@@ -1,18 +1,52 @@
 .venv/
+.env
+.env.*
+!.env.example
 node_modules/
 __pycache__/
+*.py[cod]
 *.pyc
 .pytest_cache/
 *.egg-info/
 .cache/
+venv/
 .env
 .env.*
 !.env.example
 variables.env
-# dados pessoais e modelos pesados ficam fora do git
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Machine Learning
+*.ckpt
+*.safetensors
+*.mlmodel
+*.pt
+*.pth
+
+# Datasets
 dataset/originals/*
 dataset/processed/*
 dataset/annotations/*
 dataset/splits/*
+
+# Frontend
+dist/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Modelos e dados pesados ficam fora do git
 models/recognition/*
 !**/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
