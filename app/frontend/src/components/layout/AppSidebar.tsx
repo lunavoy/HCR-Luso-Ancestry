@@ -1,27 +1,44 @@
 import {
   Archive,
   Atom,
+  BarChart3,
   BookOpen,
   Bot,
   ChevronLeft,
+  Clock3,
   FileSearch,
+  Feather,
   LayoutDashboard,
+  Map,
+  MapPin,
   Settings,
+  Shield,
 } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import { useAppStore } from '../../stores/useAppStore'
+import { useWorkspaceRole } from '../auth/AuthProvider'
 
 const navigation = [
-  { to: '/', label: 'Visão geral', icon: LayoutDashboard },
+  { to: '/workspace', label: 'Visão geral', icon: LayoutDashboard },
   { to: '/collections', label: 'Coleções', icon: Archive },
-  { to: '/documents', label: 'Documentos', icon: BookOpen },
-  { to: '/annotations', label: 'Anotações', icon: FileSearch },
+  { to: '/documents', label: 'Documentos paroquiais', icon: BookOpen },
+  { to: '/line-review', label: 'Correção rápida de linhas', icon: FileSearch },
+  { to: '/validation', label: 'Validação', icon: FileSearch },
+  { to: '/map', label: 'Mapa', icon: Map },
+  { to: '/timeline', label: 'Timeline', icon: Clock3 },
+  { to: '/places', label: 'Lugares', icon: MapPin },
+  { to: '/scribes', label: 'Padres', icon: Feather },
+  { to: '/stats', label: 'Estatísticas', icon: BarChart3 },
   { to: '/models', label: 'Modelos de IA', icon: Bot },
   { to: '/experiments', label: 'Experimentos', icon: Atom },
   { to: '/settings', label: 'Configurações', icon: Settings },
 ]
 
 export function AppSidebar() {
+  const role = useWorkspaceRole()
+  const links = role === 'admin'
+    ? [...navigation, { to: '/admin', label: 'Administração', icon: Shield }]
+    : navigation.filter(link => link.to === '/documents' || link.to === '/line-review')
   const collapsed = useAppStore(state => state.sidebarCollapsed)
   const toggleSidebar = useAppStore(state => state.toggleSidebar)
 
@@ -37,10 +54,10 @@ export function AppSidebar() {
         )}
       </div>
       <nav className="primary-nav" aria-label="Navegação principal">
-        {navigation.map(({ to, label, icon: Icon }) => (
+        {links.map(({ to, label, icon: Icon }) => (
           <NavLink
             className={({ isActive }) => `nav-link ${isActive ? 'is-active' : ''}`}
-            end={to === '/'}
+            end={to === '/workspace'}
             key={to}
             to={to}
             title={collapsed ? label : undefined}

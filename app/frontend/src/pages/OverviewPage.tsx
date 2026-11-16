@@ -27,7 +27,7 @@ export function OverviewPage() {
       <section className="work-summary" aria-label="Resumo do acervo">
         <div><BookOpen size={18} /><span><strong>{collections.length}</strong> coleção ativa</span></div>
         <div><FileImage size={18} /><span><strong>{documents.length}</strong> livros catalogados</span></div>
-        <div><Clock3 size={18} /><span><strong>{pages.filter(page => page.status === 'partial').length}</strong> páginas em revisão</span></div>
+        <div><Clock3 size={18} /><span><strong>{pages.filter(page => page.status === 'annotated').length}</strong> páginas em revisão</span></div>
         <div><CheckCircle2 size={18} /><span><strong>{pages.filter(page => page.status === 'reviewed').length}</strong> páginas revistas</span></div>
       </section>
 

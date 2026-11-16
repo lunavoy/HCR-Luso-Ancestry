@@ -79,7 +79,7 @@ export function ImportPage() {
       <Link className="back-link" to={`/documents/${documentId}`}><ArrowLeft size={15} /> {document?.title ?? 'Livro'}</Link>
       <section className="page-heading"><p className="eyebrow">Entrada de acervo</p><h1>Importar imagens</h1><p>Os originais serão preservados sem redimensionamento ou compressão.</p></section>
       <div
-        className={`drop-zone ${dragging ? 'is-dragging' : ''}`}
+        className={`drop-region ${dragging ? 'is-dragging' : ''}`}
         onDragEnter={event => { event.preventDefault(); setDragging(true) }}
         onDragOver={event => event.preventDefault()}
         onDragLeave={() => setDragging(false)}

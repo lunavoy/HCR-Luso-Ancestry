@@ -45,6 +45,9 @@ data/pagexml/*/*
 
 # Frontend
 dist/
+.wrangler/
+.dev.vars
+.dev.vars.*
 
 # Database
 *.db

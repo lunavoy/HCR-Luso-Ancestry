@@ -6,9 +6,11 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/api': 'http://127.0.0.1:5100',
-      '/recognize': 'http://127.0.0.1:5100',
-      '/detect-layout': 'http://127.0.0.1:5100',
+      '^/($|\\?)': 'http://127.0.0.1:8000',
+      '/api': 'http://127.0.0.1:8000',
+      '/site': 'http://127.0.0.1:8000',
+      '/recognize': 'http://127.0.0.1:8000',
+      '/detect-layout': 'http://127.0.0.1:8000',
     },
   },
 })

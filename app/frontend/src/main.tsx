@@ -1,13 +1,16 @@
-import { StrictMode } from 'react'
+import { StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter } from 'react-router-dom'
+import { RouterProvider } from 'react-router-dom'
 import './index.css'
-import App from './App.tsx'
+import { router } from './App'
+import { AuthProvider } from './components/auth/AuthProvider'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
+    <Suspense fallback={<div className="route-loading">A preparar o espaço de trabalho…</div>}>
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
+    </Suspense>
   </StrictMode>,
 )

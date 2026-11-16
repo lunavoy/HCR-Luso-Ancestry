@@ -1,11 +1,45 @@
 import { ArrowLeft, BookOpen, ExternalLink, FileImage, Import, Plus, X } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { apiDataService } from '../services/dataService'
 import { useAppStore } from '../stores/useAppStore'
-import type { CreateDocumentInput, RecordType } from '../types/domain'
+import type { CreateDocumentInput, RecordType, Scribe } from '../types/domain'
 import { recordTypeLabels } from '../utils/format'
 import { StatusBadge } from '../components/ui/StatusBadge'
+
+function ScribePicker({ selected, scribes, disabled, onChange }: {
+  selected: string[]
+  scribes: Scribe[]
+  disabled?: boolean
+  onChange: (ids: string[]) => void
+}) {
+  const names = scribes.filter(s => selected.includes(s.id)).map(s => s.name)
+  return (
+    <details className="scribe-picker">
+      <summary className={names.length ? '' : 'is-empty'}>
+        {names.length ? names.join(' · ') : 'Escribas: por identificar…'}
+      </summary>
+      <div className="scribe-picker-list">
+        {scribes.map(scribe => (
+          <label key={scribe.id} className="scribe-option">
+            <input
+              type="checkbox"
+              checked={selected.includes(scribe.id)}
+              disabled={disabled}
+              onChange={event => onChange(
+                event.target.checked
+                  ? [...selected, scribe.id]
+                  : selected.filter(id => id !== scribe.id),
+              )}
+            />
+            <span>{scribe.name}</span>
+          </label>
+        ))}
+        {!scribes.length && <small>Cadastre padres na página Padres primeiro.</small>}
+      </div>
+    </details>
+  )
+}
 
 export function CollectionDetailPage() {
   const { collectionId } = useParams()
@@ -25,7 +59,15 @@ export function CollectionDetailPage() {
     endYear: 1900,
     archivalReference: '',
     sourceUrl: '',
+    scribeId: null,
+    scribeIds: [],
   })
+  const [scribes, setScribes] = useState<Scribe[]>([])
+  const [assigningScribe, setAssigningScribe] = useState('')
+
+  useEffect(() => {
+    apiDataService.listScribes().then(setScribes).catch(() => setScribes([]))
+  }, [])
   const documents = useMemo(
     () => allDocuments.filter(document => document.collectionId === collectionId),
     [allDocuments, collectionId],
@@ -77,6 +119,30 @@ export function CollectionDetailPage() {
                   <div className="book-card-top"><span className="overline">Livro paroquial</span><StatusBadge status={document.status} /></div>
                   <h3>{document.title}</h3>
                   <p className="archive-reference">{document.archivalReference}</p>
+                  <div className="scribe-field"><span>Escribas / párocos que escreveram este livro</span>
+                    <ScribePicker
+                      selected={(document.scribes?.length
+                        ? document.scribes.map(s => s.id)
+                        : document.scribeId ? [document.scribeId] : [])}
+                      scribes={scribes}
+                      disabled={assigningScribe === document.id}
+                      onChange={async ids => {
+                        setAssigningScribe(document.id)
+                        try {
+                          await apiDataService.updateDocument(document.id, { scribeIds: ids })
+                          const attached = scribes.filter(s => ids.includes(s.id))
+                            .map((s, i) => ({ id: s.id, name: s.name, is_primary: i === 0 }))
+                          useAppStore.setState(state => ({ documents: state.documents.map(item => item.id === document.id
+                            ? { ...item, scribeId: ids[0] ?? null, scribes: attached }
+                            : item) }))
+                        } catch { /* mantém valor anterior */ }
+                        setAssigningScribe('')
+                      }}
+                    />
+                    <small>{document.scribes?.length
+                      ? document.scribes.map(s => s.name).join(' · ')
+                      : 'Um livro pode ter mais de um padre — marque todos que assinam nele.'}</small>
+                  </div>
                   <div className="book-metrics"><span><FileImage size={15} /> {documentPages.length} páginas</span><span>{documentPages.filter(page => page.status === 'reviewed').length} revistas</span></div>
                   <div className="book-actions"><Link className="secondary-button" to={`/documents/${document.id}`}>Explorar páginas</Link>{documentPages[0] ? <Link className="icon-button always-visible" to={`/viewer/${documentPages[0].id}`} title="Abrir no editor"><ExternalLink size={16} /></Link> : <Link className="icon-button always-visible" to={`/import/${document.id}`} title="Importar imagens"><Import size={16} /></Link>}</div>
                 </div>
@@ -94,6 +160,10 @@ export function CollectionDetailPage() {
               <label><span>Tipo documental</span><select value={form.recordType} onChange={event => updateForm('recordType', event.target.value as RecordType)}><option value="batismo">Batismos</option><option value="casamento">Casamentos</option><option value="obito">Óbitos</option></select></label>
               <div className="field-pair"><label><span>Ano inicial</span><input type="number" value={form.startYear} onChange={event => updateForm('startYear', Number(event.target.value))} /></label><label><span>Ano final</span><input type="number" value={form.endYear} onChange={event => updateForm('endYear', Number(event.target.value))} /></label></div>
               <label><span>Referência arquivística</span><input required value={form.archivalReference} onChange={event => updateForm('archivalReference', event.target.value)} placeholder="PT/ADVRL/PRQ/…" /></label>
+              <div className="full-field"><span className="field-caption">Escribas / párocos (opcional — marque todos que escrevem no livro)</span>
+                <ScribePicker selected={form.scribeIds ?? (form.scribeId ? [form.scribeId] : [])} scribes={scribes}
+                  onChange={ids => setForm(current => ({ ...current, scribeIds: ids, scribeId: ids[0] ?? null }))} />
+              </div>
               <label className="full-field"><span>URL da fonte</span><input type="url" value={form.sourceUrl} onChange={event => updateForm('sourceUrl', event.target.value)} placeholder="https://…" /></label>
             </div>
             {error && <p className="error-text">{error}</p>}

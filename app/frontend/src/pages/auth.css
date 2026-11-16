@@ -1,0 +1,97 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;1,500&display=swap');
+
+html:has(.auth-screen), body:has(.auth-screen), #root:has(.auth-screen) { min-width: 0; }
+
+.auth-screen {
+  --auth-navy: #0b2d52;
+  --auth-cream: #f7f5ed;
+  --auth-gold: #c9a961;
+  --auth-serif: "Playfair Display", Georgia, serif;
+  display: grid;
+  grid-template-columns: minmax(0, .95fr) minmax(0, 1fr);
+  min-height: 100dvh;
+  color: var(--auth-navy);
+  background: var(--auth-cream);
+}
+.auth-screen :focus-visible { outline-color: #1e4d7a; }
+.auth-identity {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 3rem;
+  padding: clamp(1.5rem, 5vw, 5rem);
+  color: var(--auth-cream);
+  background: var(--auth-navy);
+}
+.auth-backdrop, .auth-identity::after { position: absolute; inset: 0; width: 100%; height: 100%; }
+.auth-backdrop { z-index: -2; object-fit: cover; }
+.auth-identity::after { content: ""; z-index: -1; background: linear-gradient(165deg, #0b2d52 12%, #0b2d52e8 46%, #0b2d5299 100%); }
+.auth-identity :focus-visible { outline-color: var(--auth-cream); }
+.auth-wordmark { display: inline-flex; align-items: center; gap: .6rem; align-self: flex-start; font: 600 1.5rem var(--auth-serif); }
+.auth-identity .auth-wordmark img { filter: brightness(0) invert(1); }
+.auth-identity-copy p, .auth-kicker { font-size: .72rem; font-weight: 750; letter-spacing: .14em; text-transform: uppercase; }
+.auth-identity-copy p { color: #efd8a2; }
+.auth-identity-copy h2 { max-width: 32rem; margin-bottom: 1.5rem; font: 600 clamp(2.5rem, 5vw, 5rem)/1.03 var(--auth-serif); letter-spacing: -.05em; }
+.auth-identity-copy em { display: block; font-weight: 500; }
+.auth-identity-copy a { display: inline-flex; align-items: center; gap: .55rem; font-weight: 600; }
+.auth-photo-credit { margin: 0; color: var(--auth-cream); font-size: .75rem; }
+.auth-photo-credit a { text-decoration: underline; }
+.auth-content { display: grid; place-items: center; padding: clamp(1.25rem, 5vw, 4rem); }
+.auth-mobile-brand { display: none; }
+.auth-card {
+  display: grid;
+  gap: 1.45rem;
+  width: min(100%, 29rem);
+  padding: clamp(1.4rem, 4vw, 2.75rem);
+  border: 1px solid #dbcfb8;
+  border-radius: var(--radius-lg);
+  background: #fffdf8;
+  box-shadow: 0 14px 42px #0b2d5210;
+}
+.auth-card p { margin: 0; color: #425463; }
+.auth-card .auth-kicker { color: #1e4d7a; margin-bottom: .65rem; }
+.auth-card h1 { font: 600 clamp(1.95rem, 3.6vw, 2.9rem)/1.07 var(--auth-serif); letter-spacing: -.045em; }
+.auth-card form, .auth-card label { display: grid; gap: .45rem; }
+.auth-card form { gap: 1rem; }
+.auth-card label { font-weight: 650; }
+.auth-card small { font-weight: 400; }
+.auth-card input {
+  min-width: 0;
+  width: 100%;
+  min-height: 2.85rem;
+  padding: .55rem .75rem;
+  border: 1px solid #b7ab96;
+  border-radius: var(--radius-sm);
+  background: #fffdf8;
+  font-weight: 400;
+}
+.auth-submit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .6rem;
+  min-height: 2.85rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--auth-navy);
+  background: var(--auth-gold);
+  font-weight: 750;
+  cursor: pointer;
+}
+.auth-submit:hover { background: #dbbe7d; }
+.auth-submit:disabled { opacity: .7; cursor: wait; }
+.auth-card .auth-error { color: #a21c27; }
+.auth-card .auth-confirmation { display: flex; align-items: flex-start; gap: .65rem; padding: .9rem; background: #ebddc6; border-radius: var(--radius-sm); }
+.auth-confirmation svg { flex: none; }
+.auth-links { display: grid; gap: .65rem; padding-top: 1rem; border-top: 1px solid #dbcfb8; }
+.auth-links a { width: fit-content; color: #1e4d7a; font-weight: 650; text-decoration: underline; text-underline-offset: .2em; }
+
+@media (max-width: 760px) {
+  .auth-screen { grid-template-columns: 1fr; }
+  .auth-identity { display: none; }
+  .auth-content { align-content: center; gap: 1.5rem; }
+  .auth-mobile-brand { display: inline-flex; }
+}

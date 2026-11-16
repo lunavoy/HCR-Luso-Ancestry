@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { apiDataService } from '../services/dataService'
-import type { Annotation, Collection, Document, Page, Point } from '../types/domain'
+import type { Annotation, Collection, Document, Page } from '../types/domain'
 
 interface AnnotationHistory {
   past: Annotation[][]
@@ -16,8 +16,7 @@ interface AppState {
   annotationsByPage: Record<string, Annotation[]>
   histories: Record<string, AnnotationHistory>
   selectedAnnotationId?: string
-  activeTool: 'select' | 'pan' | 'polygon' | 'vertices' | 'zoom'
-  annotationType: Annotation['type']
+  activeTool: 'select' | 'pan' | 'polygon' | 'vertices' | 'line' | 'word'
   workspaceStatus: 'idle' | 'loading' | 'ready' | 'error'
   workspaceError?: string
   loadedAnnotationPages: Record<string, boolean>
@@ -27,17 +26,18 @@ interface AppState {
   toggleSidebar: () => void
   setSelectedAnnotation: (id?: string) => void
   setActiveTool: (tool: AppState['activeTool']) => void
-  setAnnotationType: (type: Annotation['type']) => void
   addCollection: (collection: Collection) => void
+  updateCollection: (collection: Collection) => void
   addDocument: (document: Document) => void
   addPages: (pages: Page[]) => void
   addAnnotation: (pageId: string, annotation: Annotation) => void
+  mutateAnnotations: (pageId: string, mutator: (annotations: Annotation[]) => Annotation[]) => void
   updateAnnotation: (pageId: string, annotationId: string, updates: Partial<Annotation>) => void
-  updateVertex: (pageId: string, annotationId: string, vertexIndex: number, point: Point) => void
   deleteAnnotation: (pageId: string, annotationId: string) => void
   undo: (pageId: string) => void
   redo: (pageId: string) => void
   loadWorkspace: () => Promise<void>
+  clearWorkspace: () => void
   setAnnotations: (pageId: string, annotations: Annotation[]) => void
 }
 
@@ -78,6 +78,8 @@ const initialTheme = (): 'light' | 'dark' => {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
+let workspaceGeneration = 0
+
 export const useAppStore = create<AppState>((set, get) => ({
   theme: initialTheme(),
   sidebarCollapsed: false,
@@ -88,7 +90,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   histories: {},
   selectedAnnotationId: undefined,
   activeTool: 'select',
-  annotationType: 'line',
   workspaceStatus: 'idle',
   workspaceError: undefined,
   loadedAnnotationPages: {},
@@ -100,8 +101,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   toggleSidebar: () => set(state => ({ sidebarCollapsed: !state.sidebarCollapsed })),
   setSelectedAnnotation: selectedAnnotationId => set({ selectedAnnotationId }),
   setActiveTool: activeTool => set({ activeTool }),
-  setAnnotationType: annotationType => set({ annotationType }),
   addCollection: collection => set(state => ({ collections: [...state.collections, collection] })),
+  updateCollection: collection => set(state => ({
+    collections: state.collections.map(item => item.id === collection.id ? collection : item),
+  })),
   addDocument: document => set(state => withCounts(state.collections, [...state.documents, document], state.pages)),
   addPages: pages => set(state => {
     const replaced = new Set(pages.map(page => page.id))
@@ -109,6 +112,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   }),
   addAnnotation: (pageId, annotation) => set(state =>
     pushHistory(state, pageId, [...(state.annotationsByPage[pageId] ?? []), annotation]),
+  ),
+  mutateAnnotations: (pageId, mutator) => set(state =>
+    pushHistory(state, pageId, mutator(state.annotationsByPage[pageId] ?? [])),
   ),
   updateAnnotation: (pageId, annotationId, updates) => set(state =>
     pushHistory(
@@ -119,12 +125,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       ),
     ),
   ),
-  updateVertex: (pageId, annotationId, vertexIndex, point) => {
-    const annotation = get().annotationsByPage[pageId]?.find(item => item.id === annotationId)
-    if (!annotation) return
-    const polygon = annotation.polygon.map((vertex, index) => index === vertexIndex ? point : vertex)
-    get().updateAnnotation(pageId, annotationId, { polygon })
-  },
   deleteAnnotation: (pageId, annotationId) => set(state => {
     const annotations = state.annotationsByPage[pageId] ?? []
     const descendants = new Set([annotationId])
@@ -172,20 +172,33 @@ export const useAppStore = create<AppState>((set, get) => ({
   setAnnotations: (pageId, annotations) => set(state => ({
     annotationsByPage: { ...state.annotationsByPage, [pageId]: annotations },
   })),
+  clearWorkspace: () => {
+    workspaceGeneration++
+    set({
+      collections: [], documents: [], pages: [], annotationsByPage: {},
+      histories: {}, loadedAnnotationPages: {}, selectedAnnotationId: undefined,
+      activeTool: 'select', workspaceStatus: 'idle', workspaceError: undefined,
+    })
+  },
   loadWorkspace: async () => {
     if (get().workspaceStatus === 'loading') return
+    const generation = workspaceGeneration
     set({ workspaceStatus: 'loading', workspaceError: undefined })
     try {
       const workspace = await apiDataService.getWorkspace()
+      if (generation !== workspaceGeneration) return
       set({ ...withCounts(workspace.collections, workspace.documents, workspace.pages), workspaceStatus: 'ready' })
     } catch (error) {
+      if (generation !== workspaceGeneration) return
       console.error('Não foi possível carregar o workspace:', error)
       set({ workspaceStatus: 'error', workspaceError: error instanceof Error ? error.message : String(error) })
     }
   },
   loadAnnotations: async (pageId, options) => {
     if (!options?.force && get().loadedAnnotationPages[pageId]) return
+    const generation = workspaceGeneration
     const annotations = await apiDataService.listAnnotations(pageId)
+    if (generation !== workspaceGeneration) return
     set(state => ({
       annotationsByPage: { ...state.annotationsByPage, [pageId]: annotations },
       loadedAnnotationPages: { ...state.loadedAnnotationPages, [pageId]: true },
